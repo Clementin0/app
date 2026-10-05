@@ -3,14 +3,18 @@
   "appName": "Neon Dash",
   "webDir": "dist",
   "android": {
-    "backgroundColor": "#0b0420",
+    "backgroundColor": "#07021a",
     "allowMixedContent": false,
-    "webContentsDebuggingEnabled": false
+    "webContentsDebuggingEnabled": false,
+    "minWebViewVersion": 80
   },
   "plugins": {
     "SystemBars": {
       "style": "DARK",
       "hidden": true
     }
+  },
+  "server": {
+    "errorPath": "webview-update.html"
   }
 }

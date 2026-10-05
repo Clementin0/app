@@ -37,13 +37,15 @@ function defaultStorage() {
 }
 
 const toCount = (v) => (Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
+// JSON copy instead of structuredClone: older Android WebViews lack it.
+const clone = (o) => JSON.parse(JSON.stringify(o));
 const toBool = (v, fallback) => (typeof v === 'boolean' ? v : fallback);
 
 export class SaveData {
   constructor(storage = defaultStorage(), now = () => Date.now()) {
     this.storage = storage;
     this.now = now;
-    this.data = structuredClone(DEFAULTS);
+    this.data = clone(DEFAULTS);
     this.load();
   }
 
@@ -72,7 +74,7 @@ export class SaveData {
       };
     } catch {
       // Corrupted save: start fresh rather than crash.
-      this.data = structuredClone(DEFAULTS);
+      this.data = clone(DEFAULTS);
     }
     return this.data;
   }
@@ -181,6 +183,6 @@ export class SaveData {
   }
 
   snapshot() {
-    return structuredClone(this.data);
+    return clone(this.data);
   }
 }

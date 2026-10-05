@@ -84,6 +84,65 @@ public class MainActivity extends BridgeActivity {
 `;
 });
 
+// ------------------------------------------------------------ build.gradle
+// Version from package.json (single source of truth) and release signing
+// from android/keystore.properties when present (never committed).
+patch(join(ANDROID, 'app', 'build.gradle'), (gradle) => {
+  if (gradle.includes('neon-dash: release config')) return gradle;
+  gradle = gradle.replace(
+    "apply plugin: 'com.android.application'\n",
+    `apply plugin: 'com.android.application'
+
+// neon-dash: release config (managed by scripts/configure-android.mjs)
+def appPackage = new groovy.json.JsonSlurper().parse(rootProject.file('../package.json'))
+def (vMajor, vMinor, vPatch) = appPackage.version.tokenize('.').collect { it.replaceAll(/\\D.*$/, '') as int }
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+`,
+  );
+  gradle = gradle.replace(/versionCode \d+/, 'versionCode vMajor * 10000 + vMinor * 100 + vPatch');
+  gradle = gradle.replace(/versionName "[^"]*"/, 'versionName appPackage.version');
+  gradle = gradle.replace(
+    '    buildTypes {\n        release {\n',
+    `    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile rootProject.file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
+`,
+  );
+  return gradle;
+});
+
+const keystoreExample = join(ANDROID, 'keystore.properties.example');
+if (!existsSync(keystoreExample)) {
+  writeFileSync(
+    keystoreExample,
+    `# Copy to keystore.properties (git-ignored) to sign release builds.
+# Create the keystore once with:
+#   keytool -genkey -v -keystore neondash-release.jks -alias neondash -keyalg RSA -keysize 2048 -validity 10000
+storeFile=neondash-release.jks
+storePassword=CHANGE_ME
+keyAlias=neondash
+keyPassword=CHANGE_ME
+`,
+  );
+  changes.push(keystoreExample.replace(`${ROOT}/`, ''));
+}
+
 // ----------------------------------------------------------------- styles
 const values = join(MAIN, 'res', 'values');
 patch(join(values, 'styles.xml'), (xml) => {

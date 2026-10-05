@@ -10,7 +10,8 @@ import { bannerReserve, bindLayout } from '../ui/layout.js';
 import { COLORS, glow, textStyle } from '../ui/theme.js';
 import { WorldRenderer } from '../ui/WorldRenderer.js';
 
-export const APP_VERSION = '1.1.0';
+/* global __APP_VERSION__ */
+export const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
 
 /** Main menu: title, play / shop / settings, records, banner ad. */
 export class MenuScene extends Phaser.Scene {
