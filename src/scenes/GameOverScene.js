@@ -1,0 +1,172 @@
+import Phaser from 'phaser';
+import { services } from '../services/services.js';
+import { Button } from '../ui/Button.js';
+import { bannerReserve, bindLayout } from '../ui/layout.js';
+import { COLORS, glow, textStyle } from '../ui/theme.js';
+
+const PANEL_W = 720;
+
+/**
+ * Run summary with three actions:
+ *  - CONTINUA: rewarded video -> revive (once per run)
+ *  - RIGIOCA / MENU: end the run; every 3rd completed game shows an interstitial.
+ */
+export class GameOverScene extends Phaser.Scene {
+  constructor() {
+    super('GameOver');
+  }
+
+  init(data) {
+    this.result = {
+      score: 0,
+      best: 0,
+      previousBest: 0,
+      isNewBest: false,
+      meters: 0,
+      coins: 0,
+      gems: 0,
+      canRevive: false,
+      ...data,
+    };
+    this.busy = false;
+    this.continueButton = null;
+  }
+
+  create() {
+    const { ads } = services;
+    const r = this.result;
+    ads.showBanner();
+    ads.preloadRewarded();
+
+    this.dim = this.add.rectangle(0, 0, 10, 10, COLORS.ink, 0.72).setOrigin(0).setInteractive();
+    this.panel = this.add.container(0, 0);
+
+    // Offer the revive unless ads are known to be unavailable (init failed / no consent).
+    const canContinue = r.canRevive && !ads.initFailed && !(ads.initialized && !ads.canRequestAds);
+    const panelH = canContinue ? 560 : 450;
+    this.panelH = panelH;
+
+    const bg = this.add.graphics();
+    bg.fillStyle(COLORS.panel, 0.96).fillRoundedRect(-PANEL_W / 2, 0, PANEL_W, panelH, 36);
+    bg.lineStyle(3, r.isNewBest ? COLORS.green : COLORS.pink, 1).strokeRoundedRect(-PANEL_W / 2, 0, PANEL_W, panelH, 36);
+
+    const titleColor = r.isNewBest ? COLORS.green : COLORS.pink;
+    const title = glow(this.add.text(0, 58, r.isNewBest ? 'NUOVO RECORD!' : 'GAME OVER', textStyle(64)).setOrigin(0.5), titleColor, 24);
+
+    this.scoreText = glow(this.add.text(0, 150, '0', textStyle(84, '#ffffff')).setOrigin(0.5), COLORS.cyan, 16);
+    const best = this.add.text(-PANEL_W / 2 + 60, 222, `RECORD  ${r.best.toLocaleString('it-IT')}`, textStyle(28, '#ffd23f')).setOrigin(0, 0.5);
+    const dist = this.add.text(PANEL_W / 2 - 60, 222, `${r.meters.toLocaleString('it-IT')} m`, textStyle(28, '#c9b8ff')).setOrigin(1, 0.5);
+
+    const coinIcon = this.add.image(-120, 278, 'coin').setScale(0.8);
+    const coinText = this.add.text(-96, 278, `+${r.coins}`, textStyle(32, '#ffd23f')).setOrigin(0, 0.5);
+    const gemIcon = this.add.image(50, 278, 'gem').setScale(0.65);
+    const gemText = this.add.text(74, 278, `+${r.gems}`, textStyle(32, '#7ff3ff')).setOrigin(0, 0.5);
+
+    this.panel.add([bg, title, this.scoreText, best, dist, coinIcon, coinText, gemIcon, gemText]);
+
+    const rowY = canContinue ? 476 : 370;
+    if (canContinue) {
+      this.continueButton = new Button(this, 0, 362, {
+        label: 'CONTINUA',
+        sublabel: 'Guarda un video',
+        icon: 'icon_video',
+        width: 460,
+        height: 104,
+        fontSize: 42,
+        color: COLORS.green,
+        onClick: () => this.onContinue(),
+      });
+      this.panel.add(this.continueButton);
+      this._refreshContinue();
+      const off = ads.on('rewardedChange', () => this._refreshContinue());
+      this.events.once('shutdown', off);
+      this.time.addEvent({ delay: 500, loop: true, callback: () => this._refreshContinue() });
+    }
+
+    this.retryButton = new Button(this, -150, rowY, { label: 'RIGIOCA', icon: 'icon_retry', width: 280, height: 92, fontSize: 36, color: COLORS.pink, onClick: () => this.finish('Game') });
+    this.menuButton = new Button(this, 150, rowY, { label: 'MENU', icon: 'icon_home', width: 280, height: 92, fontSize: 36, color: COLORS.purple, onClick: () => this.finish('Menu') });
+    this.panel.add([this.retryButton, this.menuButton]);
+
+    this.toast = this.add.text(0, 0, '', textStyle(26, '#ffffff', { backgroundColor: '#140934cc', padding: { x: 18, y: 10 } })).setOrigin(0.5).setAlpha(0).setDepth(10);
+
+    // Animated score count-up.
+    const counter = { v: 0 };
+    this.tweens.add({
+      targets: counter,
+      v: r.score,
+      duration: Math.min(1200, 300 + r.score),
+      ease: 'Cubic.easeOut',
+      onUpdate: () => this.scoreText.setText(Math.round(counter.v).toLocaleString('it-IT')),
+    });
+    if (r.isNewBest) {
+      services.sfx.play('newBest');
+      this.tweens.add({ targets: title, scale: { from: 1, to: 1.08 }, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    }
+
+    this.panel.setAlpha(0);
+    this.tweens.add({ targets: this.panel, alpha: 1, duration: 220 });
+    this.input.keyboard?.on('keydown-ENTER', () => this.finish('Game'));
+
+    bindLayout(this, (w, h) => this.layout(w, h));
+  }
+
+  layout(width, height) {
+    this.dim.setSize(width, height);
+    const avail = height - bannerReserve(this);
+    const s = Math.min(1, (avail - 24) / this.panelH, (width - 32) / PANEL_W);
+    this.panel.setScale(s).setPosition(width / 2, Math.max(12, (avail - this.panelH * s) / 2));
+    this.toast.setPosition(width / 2, Math.max(40, this.panel.y - 4 + 20));
+  }
+
+  _refreshContinue() {
+    const b = this.continueButton;
+    if (!b || this.busy || !b.active) return;
+    if (services.ads.isRewardedReady()) b.setEnabled(true).setLabel('CONTINUA', 'Guarda un video');
+    else b.setEnabled(false).setLabel('CONTINUA', 'Caricamento video...');
+  }
+
+  showToast(text) {
+    this.tweens.killTweensOf(this.toast);
+    this.toast.setText(text).setAlpha(1);
+    this.tweens.add({ targets: this.toast, alpha: 0, delay: 2200, duration: 400 });
+  }
+
+  _setBusy(busy) {
+    this.busy = busy;
+    for (const b of [this.continueButton, this.retryButton, this.menuButton]) b?.setEnabled(!busy);
+    if (!busy) this._refreshContinue();
+  }
+
+  async onContinue() {
+    if (this.busy) return;
+    this._setBusy(true);
+    const { ads } = services;
+    const result = await ads.showRewarded();
+    if (!this.sys.isActive()) return;
+    if (result.rewarded) {
+      ads.hideBanner();
+      const game = this.scene.get('Game');
+      this.scene.stop();
+      game.reviveFromAd();
+      return;
+    }
+    this._setBusy(false);
+    this.showToast(result.shown ? 'Guarda il video fino alla fine per continuare' : 'Video non disponibile, riprova tra poco');
+  }
+
+  /** Ends the run for good: counts the game for the interstitial frequency. */
+  async finish(target) {
+    if (this.busy) return;
+    this._setBusy(true);
+    const { ads, save } = services;
+    save.incrementGamesPlayed();
+    await ads.registerCompletedGame();
+    if (target === 'Game') ads.hideBanner();
+    this.scene.stop('Game');
+    this.scene.start(target);
+  }
+
+  handleBack() {
+    this.finish('Menu');
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "neon-dash",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Neon Dash - endless runner 2D in Phaser 3, confezionato per Android con Capacitor e monetizzato con Google AdMob.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "node scripts/verify-runtime.mjs",
+    "android:configure": "node scripts/configure-android.mjs",
+    "cap:sync": "npm run build && npx cap sync android && npm run android:configure",
+    "cap:open": "npx cap open android"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "@capacitor-community/admob": "^8.2.0",
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.5.2",
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
+    "playwright-core": "^1.56.1",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
+  }
+}

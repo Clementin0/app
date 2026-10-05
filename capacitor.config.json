@@ -1,0 +1,16 @@
+{
+  "appId": "com.clementin0.neondash",
+  "appName": "Neon Dash",
+  "webDir": "dist",
+  "android": {
+    "backgroundColor": "#0b0420",
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "SystemBars": {
+      "style": "DARK",
+      "hidden": true
+    }
+  }
+}

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="theme-color" content="#07021a" />
+    <meta name="format-detection" content="telephone=no" />
+    <title>Neon Dash</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #07021a;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+        font-family: 'Trebuchet MS', Roboto, Arial, sans-serif;
+      }
+      #game {
+        position: fixed;
+        inset: 0;
+      }
+      #game canvas {
+        display: block;
+      }
+      #loader {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #07021a;
+        color: #7ffcff;
+        font-weight: bold;
+        font-size: 28px;
+        letter-spacing: 6px;
+        text-shadow: 0 0 14px #00f5ff;
+        transition: opacity 0.3s;
+        z-index: 5;
+      }
+      #loader.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+      /* Orientation is locked to landscape on Android; in a browser, ask to rotate. */
+      #rotate {
+        display: none;
+      }
+      @media (orientation: portrait) and (pointer: coarse) {
+        body.web #rotate {
+          position: fixed;
+          inset: 0;
+          z-index: 20;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+          align-items: center;
+          justify-content: center;
+          background: #07021a;
+          color: #fff;
+          font-size: 22px;
+          font-weight: bold;
+          text-align: center;
+        }
+      }
+      #rotate .phone {
+        width: 52px;
+        height: 88px;
+        border: 4px solid #ff2bd6;
+        border-radius: 10px;
+        box-shadow: 0 0 16px #ff2bd6;
+        animation: rot 1.6s ease-in-out infinite;
+      }
+      @keyframes rot {
+        50% {
+          transform: rotate(-90deg);
+        }
+      }
+      /* Browser-only placeholders drawn by MockAdMob (real ads are native views). */
+      .mock-banner {
+        position: fixed;
+        left: 50%;
+        bottom: 0;
+        transform: translateX(-50%);
+        width: min(100%, 468px);
+        height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: repeating-linear-gradient(45deg, #fff, #fff 10px, #f1f1f1 10px, #f1f1f1 20px);
+        color: #333;
+        font-size: 14px;
+        font-weight: bold;
+        border-top: 2px solid #4285f4;
+        z-index: 30;
+      }
+      .mock-fullscreen {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        background: linear-gradient(135deg, #4285f4, #34a853);
+        color: #fff;
+        text-align: center;
+      }
+      .mock-ad-title {
+        font-size: 30px;
+        font-weight: bold;
+      }
+      .mock-ad-body {
+        font-size: 20px;
+      }
+      .mock-ad-close {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        width: 48px;
+        height: 48px;
+        border: 0;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.45);
+        color: #fff;
+        font-size: 22px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game"></div>
+    <div id="loader">NEON DASH</div>
+    <div id="rotate"><div class="phone"></div>Ruota il dispositivo in orizzontale</div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
