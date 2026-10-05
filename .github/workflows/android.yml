@@ -10,27 +10,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  web:
+    name: Tests & runtime verification
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
 
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-          cache: gradle
-
       - name: Install dependencies
         run: npm ci
 
-      - name: Unit tests (game logic, score, ads triggers)
+      - name: Unit tests (game logic, score, ad triggers)
         run: npm test
 
       - name: Build web bundle
@@ -41,10 +36,37 @@ jobs:
         env:
           CHROMIUM_PATH: /usr/bin/google-chrome
 
-      - name: Sync Capacitor Android project
-        run: |
-          npx cap sync android
-          npm run android:configure
+      - name: Upload verification screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-screenshots
+          path: verify-output/
+          if-no-files-found: ignore
+
+  android:
+    name: Android debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web bundle and sync Capacitor
+        run: npm run cap:sync
 
       - name: Build debug APK
         working-directory: android
@@ -56,11 +78,3 @@ jobs:
           name: neon-dash-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-
-      - name: Upload verification screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: verify-screenshots
-          path: verify-output/
-          if-no-files-found: ignore

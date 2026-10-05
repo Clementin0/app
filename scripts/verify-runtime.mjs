@@ -84,8 +84,11 @@ async function main() {
   const page = await context.newPage();
 
   const errors = [];
+  const consoleLog = [];
+  let step = 'start';
   page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`));
   page.on('console', (msg) => {
+    consoleLog.push(`[${msg.type()}] ${msg.text()}`);
     if (msg.type() === 'error') errors.push(`console.error: ${msg.text()}`);
   });
 
@@ -93,25 +96,54 @@ async function main() {
   const evaluate = (fn, arg) => page.evaluate(fn, arg);
   const waitFor = (fn, arg, timeout = 8000) => page.waitForFunction(fn, arg, { timeout, polling: 50 });
   const stats = () => evaluate((h) => ({ ...window[h].services.ads.stats, completed: window[h].services.ads.completedGames }), H);
-  const sceneActive = (key) => waitFor(([h, k]) => window[h]?.activeScenes().includes(k), [H, key]);
+  const sceneActive = (key, timeout) => {
+    step = `wait for scene ${key}`;
+    return waitFor(([h, k]) => window[h]?.activeScenes().includes(k), [H, key], timeout);
+  };
   const shot = (name) => page.screenshot({ path: join(OUT, `${name}.png`) });
 
-  /** Taps a Phaser button (dotted path from the scene, e.g. 'hud.pauseButton') at its on-screen position. */
+  /**
+   * Taps a Phaser button (dotted path from the scene, e.g. 'hud.pauseButton').
+   * Waits until it is enabled, fully faded in (Phaser ignores input on objects
+   * whose container has alpha 0) and no longer moving, then taps its center.
+   */
   async function tapButton(sceneKey, path) {
-    await waitFor(([h, s, p]) => p.split('.').reduce((o, k) => o?.[k], window[h].scene(s))?.enabled === true, [H, sceneKey, path]);
-    const pos = await evaluate(
-      ([h, s, p]) => {
-        const g = window[h].game;
-        const b = p.split('.').reduce((o, k) => o?.[k], window[h].scene(s)).getBounds();
-        const rect = g.canvas.getBoundingClientRect();
-        return { x: rect.left + b.centerX / g.scale.displayScale.x, y: rect.top + b.centerY / g.scale.displayScale.y };
-      },
-      [H, sceneKey, path],
-    );
+    step = `tap ${sceneKey}.${path}`;
+    const locate = ([h, s, p]) => {
+      const N = window[h];
+      const btn = p.split('.').reduce((o, k) => o?.[k], N.scene(s));
+      if (!btn || !btn.enabled || !btn.active) return null;
+      let alpha = 1;
+      for (let o = btn; o; o = o.parentContainer) alpha *= o.alpha;
+      if (alpha < 0.98) return null;
+      const g = N.game;
+      const b = btn.getBounds();
+      const rect = g.canvas.getBoundingClientRect();
+      return { x: rect.left + b.centerX / g.scale.displayScale.x, y: rect.top + b.centerY / g.scale.displayScale.y };
+    };
+    let pos = null;
+    for (let i = 0; i < 100; i++) {
+      const a = await evaluate(locate, [H, sceneKey, path]);
+      await page.waitForTimeout(80);
+      const b = await evaluate(locate, [H, sceneKey, path]);
+      if (a && b && Math.abs(a.x - b.x) < 1 && Math.abs(a.y - b.y) < 1) {
+        pos = b;
+        break;
+      }
+    }
+    if (!pos) throw new Error(`button ${sceneKey}.${path} never became tappable`);
     await page.touchscreen.tap(pos.x, pos.y);
   }
 
-  const forceDeath = () => evaluate((h) => window[h].scene('Game').world._die('verify'), H);
+  const forceDeath = () => {
+    step = 'force death';
+    return evaluate((h) => window[h].scene('Game').world._die('verify'), H);
+  };
+  /** Waits for a fresh run and makes it immune to obstacles, so only scripted deaths happen. */
+  const newRun = async () => {
+    await sceneActive('Game');
+    await evaluate((h) => (window[h].scene('Game').world.player.invulnerable = 1e9), H);
+  };
 
   try {
     await page.goto(`http://127.0.0.1:${port}/?e2e=1`);
@@ -131,9 +163,8 @@ async function main() {
 
     // ---------------------------------------------------- game 1 + revive
     await tapButton('Menu', 'playButton');
-    await sceneActive('Game');
     // Keep the scripted run deterministic: obstacles cannot end it before the checks.
-    await evaluate((h) => (window[h].scene('Game').world.player.invulnerable = 1e9), H);
+    await newRun();
     await waitFor(() => document.querySelector('.mock-banner')?.style.display === 'none');
     check('Gameplay: banner hidden', (await stats()).bannerHides >= 1);
 
@@ -183,7 +214,7 @@ async function main() {
 
     // -------------------------------------- interstitial every 3 games
     await tapButton('GameOver', 'retryButton');
-    await sceneActive('Game');
+    await newRun();
     let s = await stats();
     check('Completed game #1 -> no interstitial', s.completed === 1 && s.interstitialShows === 0);
 
@@ -191,7 +222,7 @@ async function main() {
     await forceDeath();
     await sceneActive('GameOver');
     await tapButton('GameOver', 'retryButton');
-    await sceneActive('Game');
+    await newRun();
     s = await stats();
     check('Completed game #2 -> no interstitial', s.completed === 2 && s.interstitialShows === 0);
 
@@ -207,16 +238,32 @@ async function main() {
 
     // Longer unattended run: the world keeps spawning without errors.
     await tapButton('Menu', 'playButton');
-    await sceneActive('Game');
-    await evaluate((h) => (window[h].scene('Game').world.player.invulnerable = 1e9), H);
+    await newRun();
+    step = 'long run';
     // Headless software rendering is slow: wait on game time, not wall time.
     await waitFor((h) => window[h].scene('Game').world.spawner.history.length >= 3, H, 90000);
     const run = await evaluate((h) => { const w = window[h].scene('Game').world; return { state: w.state, patterns: w.spawner.history.length, entities: w.entities.length }; }, H);
     check('New run from the menu: obstacles keep spawning', run.state === 'running' && run.entities > 0, JSON.stringify(run));
     await shot('05-obstacles');
   } catch (err) {
-    check('Unexpected failure', false, err.message.split('\n')[0]);
+    check(`Unexpected failure during "${step}"`, false, err.message.split('\n')[0]);
     await shot('99-failure').catch(() => {});
+    const state = await evaluate((h) => {
+      const N = window[h];
+      if (!N) return 'debug hook missing';
+      const go = N.scene('GameOver');
+      const game = N.scene('Game');
+      return {
+        activeScenes: N.activeScenes(),
+        fps: Math.round(N.game.loop.actualFps),
+        game: game?.world ? { phase: game.phase, state: game.world.state, reviveUsed: game.world.reviveUsed, time: +game.world.time.toFixed(2) } : null,
+        gameOver: go?.sys.isActive() ? { busy: go.busy, panelAlpha: go.panel?.alpha, retry: go.retryButton?.enabled, cont: go.continueButton?.enabled ?? null } : null,
+        ads: { ...N.services.ads.stats, completed: N.services.ads.completedGames, fullscreen: N.services.ads.isFullscreenShowing },
+      };
+    }, H).catch((e) => `state unavailable: ${e.message}`);
+    console.log('--- diagnostics ---');
+    console.log(JSON.stringify(state, null, 2));
+    console.log(consoleLog.slice(-15).join('\n'));
   }
 
   check('No runtime errors in the console', errors.length === 0, errors.slice(0, 3).join(' | '));
