@@ -3,11 +3,13 @@
  * End-to-end runtime check of the production build (dist/) in headless
  * Chromium, emulating a landscape phone with touch input.
  *
- * It plays the real game: menu -> play -> jumps -> death -> rewarded revive
- * -> death -> retry x3, and asserts that the score, the high score in
- * LocalStorage and every ad trigger (banner show/hide, rewarded, interstitial
- * every 3 completed games) fire without runtime errors. Ads run on the
- * built-in MockAdMob (?e2e=1 makes it fast and auto-closing).
+ * It plays the real 3D game with touch gestures: menu -> play -> swipes
+ * (lanes, jump, slide) -> tap / hold to shoot -> enemy kill -> boss fight ->
+ * death -> rewarded revive -> death -> retry x3, then settings, shop and
+ * upgrades. It asserts score, record in LocalStorage, missions, purchases and
+ * every ad trigger (banner show/hide, rewarded, interstitial every 3
+ * completed games) with no runtime errors. Ads run on the built-in MockAdMob
+ * (?e2e=1 makes it fast and auto-closing).
  *
  * Usage: npm run build && npm run verify
  * Env:   CHROMIUM_PATH=/path/to/chrome   (optional)
@@ -135,14 +137,42 @@ async function main() {
     await page.touchscreen.tap(pos.x, pos.y);
   }
 
+  // Raw touch gestures through the DevTools protocol (Playwright has tap only).
+  const cdp = await context.newCDPSession(page);
+  const CX = 470;
+  const CY = 250;
+  const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
+  async function swipe(dx, dy) {
+    step = `swipe ${dx},${dy}`;
+    await touch('touchStart', [{ x: CX, y: CY, id: 1 }]);
+    for (let i = 1; i <= 6; i++) {
+      await touch('touchMove', [{ x: CX + (dx * i) / 6, y: CY + (dy * i) / 6, id: 1 }]);
+      await page.waitForTimeout(16);
+    }
+    await touch('touchEnd', []);
+  }
+  /** Keeps a finger down (auto-fire) until `until` resolves. */
+  async function holdFire(until) {
+    await touch('touchStart', [{ x: CX, y: CY, id: 2 }]);
+    try {
+      await until();
+    } finally {
+      await touch('touchEnd', []);
+    }
+  }
+  const world = (fn, arg) => evaluate(([h, src, a]) => new Function('w', 'a', `return (${src})(w, a)`)(window[h].scene('Game').world, a), [H, fn.toString(), arg]);
+  const waitWorld = (fn, arg, timeout = 15000) =>
+    waitFor(([h, src, a]) => { const w = window[h].scene('Game')?.world; return !!w && new Function('w', 'a', `return (${src})(w, a)`)(w, a); }, [H, fn.toString(), arg], timeout);
+  const save = () => evaluate(() => JSON.parse(localStorage.getItem('neondash.save.v1')));
+
   const forceDeath = () => {
     step = 'force death';
-    return evaluate((h) => window[h].scene('Game').world._die('verify'), H);
+    return world((w) => w._die('verify'));
   };
-  /** Waits for a fresh run and makes it immune to obstacles, so only scripted deaths happen. */
+  /** Waits for a fresh run and makes it immune to damage, so only scripted deaths happen. */
   const newRun = async () => {
     await sceneActive('Game');
-    await evaluate((h) => (window[h].scene('Game').world.player.invulnerable = 1e9), H);
+    await world((w) => (w.player.invulnerable = 1e9));
   };
 
   try {
@@ -152,41 +182,101 @@ async function main() {
     await sceneActive('Menu');
     check('Main menu shown', true);
 
-    const renderer = await evaluate((h) => (window[h].game.renderer.type === 2 ? 'WebGL' : 'Canvas'), H);
-    check('Renderer initialised', true, renderer);
+    const renderer = await evaluate((h) => ({ ui: window[h].game.renderer.type === 2 ? 'WebGL' : 'Canvas', three: !!window[h].services.stage?.renderer?.getContext() }), H);
+    check('Renderers initialised (Phaser UI + Three.js 3D)', renderer.three, JSON.stringify(renderer));
+    step = 'menu demo';
+    await waitFor((h) => window[h].scene('Menu').demo.distance > 5, H, 15000);
+    check('Menu: 3D demo run is playing', true);
 
     await waitFor((h) => window[h].services.ads.initialized, H);
     await waitFor(() => document.querySelector('.mock-banner')?.style.display === 'flex');
     check('Menu: banner ad shown', (await stats()).bannerShows >= 1);
+    // Deterministic missions for this check: one is completed by the first kill.
+    await evaluate((h) => {
+      const { save } = window[h].services;
+      save.data.missions = {
+        active: [
+          { id: 'kills', progress: 0, target: 1, reward: { coins: 25, gems: 0 } },
+          { id: 'jumps', progress: 0, target: 40, reward: { coins: 100, gems: 0 } },
+          { id: 'metersRun', progress: 0, target: 900, reward: { coins: 200, gems: 0 } },
+        ],
+        completed: 0,
+      };
+      save.persist();
+    }, H);
     await page.waitForTimeout(600);
     await shot('01-menu');
 
     // ---------------------------------------------------- game 1 + revive
     await tapButton('Menu', 'playButton');
-    // Keep the scripted run deterministic: obstacles cannot end it before the checks.
     await newRun();
     await waitFor(() => document.querySelector('.mock-banner')?.style.display === 'none');
     check('Gameplay: banner hidden', (await stats()).bannerHides >= 1);
+    await world((w) => (w.entities = [])); // nothing may block the lane-change checks
 
-    let maxHeight = 0;
-    for (let i = 0; i < 6; i++) {
-      await page.touchscreen.tap(600, 220);
-      await page.waitForTimeout(120);
-      maxHeight = Math.max(maxHeight, await evaluate((h) => { const w = window[h].scene('Game').world; return w.groundY - w.player.y; }, H));
-      await page.waitForTimeout(250);
-    }
-    check('Tap input makes the player jump', maxHeight > 40, `max height ${Math.round(maxHeight)}px`);
-    const score1 = await evaluate((h) => window[h].scene('Game').world.score.score, H);
+    await swipe(-140, 0);
+    await waitWorld((w) => w.player.lane === 0);
+    await swipe(140, 0);
+    await swipe(140, 0);
+    await waitWorld((w) => w.player.lane === 2);
+    check('Swipe left / right changes lane', true);
+    // Headless frames are slow: a jump can be over before the swipe returns,
+    // so the peak height and the slide are sampled every frame in the page.
+    await evaluate((h) => {
+      const sc = window[h].scene('Game');
+      const track = { maxY: 0, slid: false };
+      sc.events.on('postupdate', () => {
+        track.maxY = Math.max(track.maxY, sc.world.player.y);
+        track.slid ||= sc.world.player.slide > 0;
+      });
+      window.__track = track;
+    }, H);
+    await swipe(0, -140);
+    await waitFor(() => window.__track.maxY > 0.5);
+    check('Swipe up jumps', true, `peak ${(await evaluate(() => window.__track.maxY)).toFixed(2)} m`);
+    await waitWorld((w) => w.player.grounded);
+    await swipe(0, 140);
+    await waitFor(() => window.__track.slid);
+    check('Swipe down slides', (await world((w) => w.stats.slides)) >= 1);
+
+    const shots0 = await world((w) => w.stats.shots);
+    step = 'tap to shoot';
+    await page.touchscreen.tap(CX, CY);
+    await waitWorld((w, n) => w.stats.shots > n, shots0);
+    check('Tap shoots', true);
+
+    step = 'kill an enemy';
+    await world((w) => w._addEntity({ type: 'walker', lane: w.player.lane, dz: 0 }, 32));
+    await holdFire(() => waitWorld((w) => w.stats.kills >= 1, null, 20000));
+    const kill = await world((w) => ({ kills: w.stats.kills, bonus: w.score.bonus }));
+    check('Hold to auto-fire kills an enemy (bonus points)', kill.kills >= 1 && kill.bonus > 0, JSON.stringify(kill));
+
+    const score1 = await world((w) => w.score.score);
     await page.waitForTimeout(800);
-    const score2 = await evaluate((h) => window[h].scene('Game').world.score.score, H);
+    const score2 = await world((w) => w.score.score);
     check('Score increases while running', score2 > score1 && score1 >= 0, `${score1} -> ${score2}`);
     await shot('02-gameplay');
+
+    // Boss at the end of the zone.
+    step = 'boss';
+    await world((w) => (w.distance = w.zone.start + w.cfg.ZONES.bossAt));
+    await waitWorld((w) => w.boss && w.boss.z < 40, null, 30000);
+    const bossBar = await evaluate((h) => window[h].scene('Game').hud.bossLabel.visible, H);
+    check('Boss appears at the end of the zone', true, `boss bar visible: ${bossBar}`);
+    await page.waitForTimeout(500);
+    await shot('03-boss');
+    await world((w) => (w.boss.hp = 3));
+    await holdFire(() => waitWorld((w) => w.zone.index === 1, null, 30000));
+    const boss = await world((w) => ({ bosses: w.stats.bosses, coins: w.score.coins, gems: w.score.gems }));
+    check('Boss defeated -> reward and next zone', boss.bosses === 1 && boss.coins >= 40 && boss.gems >= 3, JSON.stringify(boss));
+    await page.waitForTimeout(1500);
+    await shot('04-zone2');
 
     // Pause / resume.
     await tapButton('Game', 'hud.pauseButton');
     await sceneActive('Pause');
     check('Pause button opens the pause menu', true);
-    await shot('03-pause');
+    await shot('05-pause');
     await tapButton('Pause', 'resumeButton');
     await waitFor((h) => window[h].scene('Game').phase === 'running', H, 6000);
     check('Resume: countdown then running again', true);
@@ -195,14 +285,16 @@ async function main() {
     await sceneActive('GameOver');
     await waitFor(() => document.querySelector('.mock-banner')?.style.display === 'flex');
     check('Game over: banner shown', true);
-    const best = await evaluate(() => JSON.parse(localStorage.getItem('neondash.save.v1')).highScore);
-    check('High score saved in LocalStorage', best > 0, `highScore=${best}`);
+    let data = await save();
+    check('High score saved in LocalStorage', data.highScore > 0, `highScore=${data.highScore}`);
+    const jumps = data.missions.active.find((m) => m.id === 'jumps');
+    check('Missions: progress saved, completed mission rewarded', data.missions.completed === 1 && jumps?.progress >= 1 && data.totalCoins >= 25 + boss.coins, `completed=${data.missions.completed} jumps=${jumps?.progress} coins=${data.totalCoins}`);
     await page.waitForTimeout(1300);
-    await shot('04-gameover');
+    await shot('06-gameover');
 
     await tapButton('GameOver', 'continueButton');
     await waitFor((h) => window[h].scene('Game').phase === 'running', H, 8000);
-    const revived = await evaluate((h) => { const w = window[h].scene('Game').world; return { state: w.state, used: w.reviveUsed }; }, H);
+    const revived = await world((w) => ({ state: w.state, used: w.reviveUsed, hp: w.player.hp }));
     const s1 = await stats();
     check('Rewarded ad watched -> player revived', revived.state === 'running' && revived.used && s1.rewardsEarned === 1, JSON.stringify(revived));
     check('Interstitial not shown on revive', s1.interstitialShows === 0);
@@ -217,6 +309,8 @@ async function main() {
     await newRun();
     let s = await stats();
     check('Completed game #1 -> no interstitial', s.completed === 1 && s.interstitialShows === 0);
+    data = await save();
+    check('Lifetime kills and bosses saved', data.lifetime.kills >= 1 && data.lifetime.bosses === 1, JSON.stringify(data.lifetime));
 
     await page.waitForTimeout(400);
     await forceDeath();
@@ -233,8 +327,7 @@ async function main() {
     await sceneActive('Menu');
     s = await stats();
     check('Completed game #3 -> interstitial shown', s.completed === 3 && s.interstitialShows === 1, JSON.stringify(s));
-    const played = await evaluate(() => JSON.parse(localStorage.getItem('neondash.save.v1')).gamesPlayed);
-    check('Games played persisted', played === 3, `gamesPlayed=${played}`);
+    check('Games played persisted', (await save()).gamesPlayed === 3, `gamesPlayed=${(await save()).gamesPlayed}`);
 
     // ------------------------------------------------ settings & i18n
     await tapButton('Menu', 'settingsButton');
@@ -242,10 +335,15 @@ async function main() {
     await tapButton('Settings', 'toggles.vibration');
     await waitFor(() => JSON.parse(localStorage.getItem('neondash.save.v1')).vibration === false);
     check('Settings: vibration toggle saved', true);
+    await tapButton('Settings', 'qualityButtons.low');
+    await waitFor((h) => window[h].services.stage.qualityName === 'low' && JSON.parse(localStorage.getItem('neondash.save.v1')).quality === 'low', H);
+    await tapButton('Settings', 'qualityButtons.medium');
+    await waitFor((h) => window[h].services.stage.qualityName === 'medium', H);
+    check('Settings: 3D quality applied and saved', true);
     await tapButton('Settings', 'langButtons.en');
     await waitFor((h) => window[h].scene('Menu')?.playButton?.text.text === 'PLAY', H);
     check('Settings: language switched to English', true);
-    await shot('06-settings-en');
+    await shot('07-settings-en');
     await tapButton('Settings', 'langButtons.it');
     await waitFor((h) => window[h].scene('Menu')?.playButton?.text.text === 'GIOCA', H);
     await tapButton('Settings', 'closeButton');
@@ -255,18 +353,28 @@ async function main() {
 
     // ------------------------------------------------------------- shop
     const rewardsBefore = (await stats()).rewardsEarned;
-    await evaluate((h) => window[h].services.save.addCurrency(200, 0), H);
+    await evaluate((h) => window[h].services.save.addCurrency(400, 0), H);
     await tapButton('Menu', 'shopButton');
     await sceneActive('Shop');
     const coinsBefore = await evaluate((h) => window[h].services.save.snapshot().totalCoins, H);
     await tapButton('Shop', 'cards.1');
-    const bought = await evaluate((h) => window[h].services.save.snapshot(), H);
-    check('Shop: skin bought with coins and equipped', bought.selectedSkin === 'bubblegum' && bought.totalCoins === coinsBefore - 150, `${coinsBefore} -> ${bought.totalCoins} coins`);
+    step = 'preview skin';
+    await waitFor((h) => window[h].services.stage.view?.character?.userData.skin.id === 'bubblegum', H);
+    check('Shop: tapping an item previews it on the 3D character', true);
+    await tapButton('Shop', 'actionButton');
+    let snap = await evaluate((h) => window[h].services.save.snapshot(), H);
+    check('Shop: skin bought with coins and equipped', snap.equipped.skin === 'bubblegum' && snap.totalCoins === coinsBefore - 150, `${coinsBefore} -> ${snap.totalCoins} coins`);
+    await tapButton('Shop', 'tabButtons.4');
+    await tapButton('Shop', 'upgradeRows.0.button');
+    snap = await evaluate((h) => window[h].services.save.snapshot(), H);
+    check('Shop: weapon upgrade bought', snap.upgrades.damage === 1 && snap.totalCoins === coinsBefore - 300, `damage lv ${snap.upgrades.damage}, ${snap.totalCoins} coins`);
+    await tapButton('Shop', 'tabButtons.0');
     await tapButton('Shop', 'freeButton');
     await waitFor(([h, n]) => window[h].services.ads.stats.rewardsEarned > n, [H, rewardsBefore], 15000);
-    await waitFor(([h, c]) => window[h].services.save.snapshot().totalCoins === c + 50, [H, bought.totalCoins]);
+    await waitFor(([h, c]) => window[h].services.save.snapshot().totalCoins === c + 50, [H, snap.totalCoins]);
     check('Shop: rewarded video grants +50 coins', true);
-    await shot('07-shop');
+    await page.waitForTimeout(500);
+    await shot('08-shop');
     await tapButton('Shop', 'backButton');
     await sceneActive('Menu');
 
@@ -275,14 +383,15 @@ async function main() {
     await newRun();
     step = 'long run';
     // Headless software rendering is slow: wait on game time, not wall time.
-    await waitFor((h) => window[h].scene('Game').world.spawner.history.length >= 3, H, 90000);
-    const run = await evaluate((h) => { const w = window[h].scene('Game').world; return { state: w.state, patterns: w.spawner.history.length, entities: w.entities.length }; }, H);
-    check('New run from the menu: obstacles keep spawning', run.state === 'running' && run.entities > 0, JSON.stringify(run));
+    await waitFor((h) => window[h].scene('Game').world.spawner.history.length >= 4, H, 90000);
+    const run = await world((w) => ({ state: w.state, patterns: w.spawner.history.length, entities: w.entities.length, damage: w.weaponStats.damage }));
+    check('New run from the menu: rows keep spawning', run.state === 'running' && run.entities > 0, JSON.stringify(run));
+    check('Damage upgrade applied to the weapon', run.damage > 1, `damage ${run.damage}`);
     const audio = await evaluate((h) => { const { sfx, music } = window[h].services; return { ctx: sfx.ctx?.state ?? 'none', scheduling: music.timer !== null, intensity: music.intensity }; }, H);
     check('Audio engine running with in-game music', audio.ctx === 'running' && audio.scheduling && audio.intensity === 1, JSON.stringify(audio));
-    const skinKey = await evaluate((h) => window[h].scene('Game').view.player.texture.key, H);
-    check('Bought skin used in game', skinKey === 'player_bubblegum', skinKey);
-    await shot('05-obstacles');
+    const skin = await evaluate((h) => window[h].scene('Game').view.character.userData.skin.id, H);
+    check('Bought skin used in game', skin === 'bubblegum', skin);
+    await shot('09-run');
   } catch (err) {
     check(`Unexpected failure during "${step}"`, false, err.message.split('\n')[0]);
     await shot('99-failure').catch(() => {});
@@ -294,7 +403,7 @@ async function main() {
       return {
         activeScenes: N.activeScenes(),
         fps: Math.round(N.game.loop.actualFps),
-        game: game?.world ? { phase: game.phase, state: game.world.state, reviveUsed: game.world.reviveUsed, time: +game.world.time.toFixed(2) } : null,
+        game: game?.world ? { phase: game.phase, state: game.world.state, reviveUsed: game.world.reviveUsed, time: +game.world.time.toFixed(2), lane: game.world.player.lane, zone: game.world.zone.index, boss: !!game.world.boss } : null,
         gameOver: go?.sys.isActive() ? { busy: go.busy, panelAlpha: go.panel?.alpha, retry: go.retryButton?.enabled, cont: go.continueButton?.enabled ?? null } : null,
         ads: { ...N.services.ads.stats, completed: N.services.ads.completedGames, fullscreen: N.services.ads.isFullscreenShowing },
       };

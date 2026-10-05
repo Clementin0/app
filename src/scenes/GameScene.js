@@ -1,29 +1,45 @@
 import Phaser from 'phaser';
-import { REVIVE, WORLD } from '../config/game.config.js';
+import { zoneTheme } from '../config/zones.js';
+import { loadoutFrom } from '../config/upgrades.js';
 import { t } from '../i18n.js';
-import { RunnerWorld } from '../logic/RunnerWorld.js';
+import { createRng } from '../logic/rng.js';
+import { LaneWorld } from '../logic3d/LaneWorld.js';
+import { Missions } from '../logic3d/Missions.js';
 import { services } from '../services/services.js';
-import { Background } from '../ui/Background.js';
+import { GameView } from '../three/GameView.js';
 import { Hud } from '../ui/Hud.js';
 import { bindLayout } from '../ui/layout.js';
 import { COLORS } from '../ui/theme.js';
-import { WorldRenderer } from '../ui/WorldRenderer.js';
+
+const SWIPE = 42; // game pixels
+const HOLD_TO_FIRE = 0.2; // seconds
+const COUNTDOWN = 3;
 
 const SFX_FOR_EVENT = {
   jump: 'jump',
-  doubleJump: 'doubleJump',
+  slide: 'slide',
+  bump: 'bump',
+  shoot: 'shoot',
+  hit: 'hit',
+  kill: 'explode',
+  smash: 'explode',
+  hurt: 'hurt',
   coin: 'coin',
   gem: 'gem',
-  shield: 'powerup',
-  magnet: 'powerup',
+  powerup: 'powerup',
   shieldBreak: 'shieldBreak',
+  enemyShot: 'enemyShot',
+  plasmaDestroyed: 'hit',
   death: 'death',
-  revive: 'revive',
+  bossSpawn: 'alarm',
+  bossDefeated: 'newBest',
+  zone: 'levelUp',
 };
 
 /**
- * Gameplay scene: owns a RunnerWorld, feeds it input, renders it and runs
- * the run lifecycle (start -> pause -> death -> game over -> revive).
+ * Gameplay: a LaneWorld rendered in 3D, controlled with swipes (lanes,
+ * jump, slide) and taps (shoot, hold for auto-fire), with the Phaser HUD
+ * on top. Handles pause, death, game over and the rewarded revive.
  */
 export class GameScene extends Phaser.Scene {
   constructor() {
@@ -32,66 +48,115 @@ export class GameScene extends Phaser.Scene {
 
   init() {
     this.countdownTimer = null;
+    this.gestures = new Map();
+    this.tutorialMoves = 0;
   }
 
   create() {
-    const { save, ads } = services;
+    const { save, ads, music, stage } = services;
     ads.hideBanner();
     this.cameras.main.fadeIn(250, 7, 2, 26);
 
+    const snap = save.snapshot();
     this.phase = 'running';
     this.startBest = save.highScore;
-    this.committed = { coins: 0, gems: 0 };
-    this.jumps = 0;
+    this.committed = { coins: 0, gems: 0, stats: {} };
+    this.completedMissions = [];
 
-    this.bg = new Background(this);
-    this.world = new RunnerWorld({ width: this.scale.width, height: this.scale.height, best: save.highScore });
-    const snap = save.snapshot();
-    this.view = new WorldRenderer(this, this.world, { skin: snap.selectedSkin, recordPx: snap.bestDistance * WORLD.pixelsPerMeter });
-    services.music.start(1);
-    services.music.duck(false);
+    this.world = new LaneWorld({ rng: createRng(Date.now() >>> 0), best: save.highScore, loadout: loadoutFrom(snap) });
+    this.view = stage.setView(new GameView(stage, this.world, { equipped: snap.equipped }));
     this.hud = new Hud(this, { onPause: () => this.pauseGame() });
+
+    music.setZone(0);
+    music.start(1);
+    music.setIntensity(1);
+    music.duck(false);
 
     this.showTutorial = snap.gamesPlayed < 3;
     this.hud.showHint(this.showTutorial);
-    if (this.showTutorial) this.time.delayedCall(7000, () => this.hud.showHint(false));
-    this.hud.showMessage(t('go'), COLORS.cyan, 600);
+    if (this.showTutorial) this.time.delayedCall(9000, () => this.hud.showHint(false));
+    this.hud.showMessage(t('zone', { n: 1 }), zoneTheme(0).line, 1300, 56, t(zoneTheme(0).nameKey));
 
     this._bindInput();
-    // Scene events persist across restarts: detach on shutdown to avoid duplicates.
     const onResume = () => this._onResume();
     this.events.on('resume', onResume);
     this.events.once('shutdown', () => this.events.off('resume', onResume));
-    bindLayout(this, (w, h) => {
-      this.world.setViewport(w, h);
-      this.bg.layout(w, h, this.world.groundY);
-      this.hud.layout(w, h);
-    });
+    bindLayout(this, (w, h) => this.hud.layout(w, h));
   }
 
+  // -------------------------------------------------------------- input
+
   _bindInput() {
-    this.input.on('pointerdown', (_pointer, over) => {
-      if (over.length) return; // tapped a HUD button
+    this.input.on('pointerdown', (pointer, over) => {
+      if (over.length) return; // HUD button
       services.sfx.unlock();
-      this.jump();
+      this.gestures.set(pointer.id, { x: pointer.x, y: pointer.y, start: this.time.now, swiped: false, holding: false, dir: null });
     });
-    this.input.on('pointerup', () => this.world.releaseJump());
+    this.input.on('pointermove', (pointer) => {
+      const g = this.gestures.get(pointer.id);
+      if (g && this.phase === 'running') this._swipe(g, pointer.x, pointer.y);
+    });
+    const release = (pointer) => {
+      const g = this.gestures.get(pointer.id);
+      if (!g) return;
+      this.gestures.delete(pointer.id);
+      // A fast flick may deliver no move events at all: judge it on release.
+      if (!g.swiped && !g.holding && this.phase === 'running' && !this._swipe(g, pointer.x, pointer.y)) this.world.fire();
+      if (![...this.gestures.values()].some((x) => x.holding)) this.world.setFiring(false);
+    };
+    this.input.on('pointerup', release);
+    this.input.on('pointerupoutside', release);
 
     const kb = this.input.keyboard;
     if (!kb) return;
-    for (const key of ['SPACE', 'UP', 'W']) {
-      kb.on(`keydown-${key}`, (e) => {
-        if (!e.repeat) this.jump();
-      });
-      kb.on(`keyup-${key}`, () => this.world.releaseJump());
+    const on = (keys, fn) => keys.forEach((k) => kb.on(`keydown-${k}`, (e) => !e.repeat && this.phase === 'running' && fn()));
+    on(['LEFT', 'A'], () => this.world.moveLeft());
+    on(['RIGHT', 'D'], () => this.world.moveRight());
+    on(['UP', 'W'], () => this.world.jump());
+    on(['DOWN', 'S'], () => this.world.slide());
+    for (const k of ['SPACE', 'J', 'K']) {
+      kb.on(`keydown-${k}`, () => this.world.setFiring(true));
+      kb.on(`keyup-${k}`, () => this.world.setFiring(false));
     }
     kb.on('keydown-P', () => this.pauseGame());
     kb.on('keydown-ESC', () => this.pauseGame());
   }
 
-  jump() {
+  /**
+   * Turns finger travel into a lane change / jump / slide. One touch can
+   * chain different directions (e.g. left then up), but a long swipe in the
+   * same direction counts once. Returns true if the travel was a swipe.
+   */
+  _swipe(g, x, y) {
+    const dx = x - g.x;
+    const dy = y - g.y;
+    if (Math.hypot(dx, dy) < SWIPE) return false;
+    const dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : dy < 0 ? 'up' : 'down';
+    g.x = x;
+    g.y = y;
+    g.swiped = true;
+    if (dir === g.dir) return true;
+    g.dir = dir;
+    if (dir === 'left') this.world.moveLeft();
+    else if (dir === 'right') this.world.moveRight();
+    else if (dir === 'up') this.world.jump();
+    else this.world.slide();
+    this._tutorialProgress();
+    return true;
+  }
+
+  _updateHolds() {
     if (this.phase !== 'running') return;
-    if (this.world.pressJump() && this.showTutorial && ++this.jumps >= 3) {
+    for (const g of this.gestures.values()) {
+      if (!g.swiped && !g.holding && (this.time.now - g.start) / 1000 > HOLD_TO_FIRE) {
+        g.holding = true;
+        this.world.setFiring(true);
+      }
+    }
+  }
+
+  _tutorialProgress() {
+    if (this.showTutorial && ++this.tutorialMoves >= 4) {
       this.showTutorial = false;
       this.hud.showHint(false);
     }
@@ -99,27 +164,35 @@ export class GameScene extends Phaser.Scene {
 
   // ---------------------------------------------------------- lifecycle
 
+  _freeze(frozen) {
+    this.view.frozen = frozen;
+    if (frozen) {
+      this.world.setFiring(false);
+      this.gestures.clear();
+    }
+  }
+
   pauseGame() {
     if (this.phase !== 'running' && this.phase !== 'countdown') return;
     this._cancelCountdown();
     this.phase = 'paused';
-    this.world.releaseJump();
+    this._freeze(true);
     services.music.duck(true);
     this.scene.launch('Pause');
     this.scene.pause();
   }
 
   _onResume() {
-    // Back from the pause menu: give the player a moment before running again.
     if (this.phase === 'paused') {
       services.music.duck(false);
-      this.startCountdown(REVIVE.countdown);
+      this.startCountdown(COUNTDOWN);
     }
   }
 
   startCountdown(seconds) {
     this._cancelCountdown();
     this.phase = 'countdown';
+    this._freeze(true);
     let n = seconds;
     const tick = () => {
       if (n > 0) {
@@ -130,6 +203,7 @@ export class GameScene extends Phaser.Scene {
         this.hud.showMessage(t('go'), COLORS.cyan, 500, 90);
         services.sfx.play('go');
         this.phase = 'running';
+        this._freeze(false);
         this._cancelCountdown();
       }
     };
@@ -142,26 +216,56 @@ export class GameScene extends Phaser.Scene {
     this.countdownTimer = null;
   }
 
-  /** Persists record and currency collected so far (idempotent per amount). */
+  runStats() {
+    const w = this.world;
+    return {
+      ...w.stats,
+      coins: w.score.coins,
+      gems: w.score.gems,
+      meters: Math.floor(w.distance),
+      score: w.score.score,
+      bestCombo: w.combo.best,
+    };
+  }
+
+  /** Persists record, currency, lifetime stats and missions (idempotent per amount). */
   commitProgress() {
     const { save } = services;
-    const summary = this.world.score.summary();
+    const w = this.world;
+    const summary = w.score.summary();
+    summary.meters = Math.floor(w.distance);
     save.submitScore(summary.score, summary.meters);
     save.addCurrency(summary.coins - this.committed.coins, summary.gems - this.committed.gems);
-    this.committed = { coins: summary.coins, gems: summary.gems };
+
+    const stats = this.runStats();
+    const missions = new Missions(save.data.missions);
+    const done = missions.applyRun(stats, this.committed.stats);
+    for (const m of done) save.addCurrency(m.reward.coins, m.reward.gems);
+    this.completedMissions.push(...done);
+    save.persist();
+
+    this.committed = { coins: summary.coins, gems: summary.gems, stats };
     return summary;
+  }
+
+  /** Called once when the run is over for good (retry / menu). */
+  finalizeRun() {
+    const s = this.world.stats;
+    services.save.addLifetime({ kills: s.kills, bosses: s.bosses });
   }
 
   _onDeath() {
     this.phase = 'dying';
-    this.world.releaseJump();
+    this._freeze(false);
+    this.world.setFiring(false);
     this.hud.showHint(false);
-    this.time.delayedCall(950, () => this.showGameOver());
+    this.time.delayedCall(1100, () => this.showGameOver());
   }
 
   showGameOver() {
     if (this.phase === 'over') return;
     this.phase = 'over';
+    this._freeze(true);
     services.music.duck(true);
     const summary = this.commitProgress();
     this.scene.launch('GameOver', {
@@ -169,6 +273,9 @@ export class GameScene extends Phaser.Scene {
       isNewBest: summary.score > this.startBest,
       previousBest: this.startBest,
       canRevive: this.world.canRevive,
+      kills: this.world.stats.kills,
+      zone: this.world.zone.index + 1,
+      missions: this.completedMissions.splice(0),
     });
     this.scene.pause();
   }
@@ -181,7 +288,7 @@ export class GameScene extends Phaser.Scene {
     services.sfx.play('revive');
     services.music.duck(false);
     services.haptics.success();
-    this.startCountdown(REVIVE.countdown);
+    this.startCountdown(COUNTDOWN);
     return true;
   }
 
@@ -193,30 +300,26 @@ export class GameScene extends Phaser.Scene {
 
   update(_time, delta) {
     const dt = Math.min(delta / 1000, 0.05);
+    this._updateHolds();
     if (this.phase === 'running') this.world.step(dt);
 
     const events = this.view.handleEvents(this.world.drainEvents());
     for (const e of events) this._onWorldEvent(e);
-
-    this.view.render(dt);
-    this.bg.update(dt, this.phase === 'running' ? this.world.speed : 0);
     this.hud.update(this.world.hud());
   }
 
   _onWorldEvent(e) {
-    const { sfx, haptics } = services;
+    const { sfx, haptics, music } = services;
     const sound = SFX_FOR_EVENT[e.type];
     if (sound) sfx.play(sound);
     switch (e.type) {
-      case 'shield':
-      case 'magnet':
+      case 'kill':
         haptics.light();
         break;
+      case 'hurt':
+      case 'smash':
       case 'shieldBreak':
         haptics.medium();
-        break;
-      case 'land':
-        if (e.impact > 700) sfx.play('land');
         break;
       case 'coin':
         this.hud.bump(this.hud.coinIcon);
@@ -224,13 +327,34 @@ export class GameScene extends Phaser.Scene {
       case 'gem':
         this.hud.bump(this.hud.gemIcon);
         break;
-      case 'levelUp':
-        sfx.play('levelUp');
-        this.hud.showMessage(t('speedUp'), COLORS.yellow, 900, 58);
+      case 'powerup':
+        haptics.light();
+        this.hud.showMessage(t(e.kind), COLORS.green, 800, 46);
         break;
+      case 'bossSpawn':
+        music.setIntensity(2);
+        haptics.heavy();
+        this.hud.showMessage(t('bossIncoming'), COLORS.pink, 1600, 60);
+        break;
+      case 'bossDefeated':
+        music.setIntensity(1);
+        haptics.success();
+        this.hud.showMessage(t('bossDefeated'), COLORS.green, 1600, 60, `+${e.coins}  +${e.gems}`);
+        break;
+      case 'bossFled':
+        music.setIntensity(1);
+        this.hud.showMessage(t('bossFled'), COLORS.purple, 1300, 46);
+        break;
+      case 'zone': {
+        const theme = zoneTheme(e.index);
+        music.setZone(e.index);
+        this.cameras.main.flash(400, 255, 255, 255);
+        this.time.delayedCall(1700, () => this.hud.showMessage(t('zone', { n: e.index + 1 }), theme.line, 1500, 56, t(theme.nameKey)));
+        break;
+      }
       case 'newBest':
         sfx.play('newBest');
-        this.hud.showMessage(t('newRecord'), COLORS.green, 1200, 58);
+        this.hud.showMessage(t('newRecord'), COLORS.green, 1200, 54);
         break;
       case 'death':
         haptics.heavy();

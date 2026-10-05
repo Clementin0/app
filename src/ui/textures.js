@@ -1,13 +1,11 @@
-import { SKINS, skinTextureKey } from '../config/skins.js';
-import { createRng } from '../logic/rng.js';
-import { SIZES } from '../logic/Spawner.js';
+import { SKINS } from '../config/cosmetics.js';
 
 /**
- * Procedural art: every texture is drawn at boot on a 2D canvas (gradients,
- * glows), so the game ships without any image file.
+ * Procedural 2D textures for the Phaser interface (HUD, menus, shop). The
+ * 3D world has its own textures in src/three/textures3d.js.
  */
 
-const PAD = 10; // room for the glow around shapes
+const PAD = 10;
 
 function canvasTexture(scene, key, w, h, draw) {
   if (scene.textures.exists(key)) return key;
@@ -31,6 +29,8 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+const css = (c) => `#${c.toString(16).padStart(6, '0')}`;
+
 function glowStroke(ctx, color, blur, width) {
   ctx.shadowColor = color;
   ctx.shadowBlur = blur;
@@ -38,204 +38,6 @@ function glowStroke(ctx, color, blur, width) {
   ctx.lineWidth = width;
   ctx.stroke();
   ctx.shadowBlur = 0;
-}
-
-// ------------------------------------------------------------- characters
-
-/** Runner sprite for one skin (rounded cube with eyes, glossy highlight, glow). */
-function drawRunner(scene, skin) {
-  const S = 60;
-  canvasTexture(scene, skinTextureKey(skin.id), S + PAD * 2, S + PAD * 2, (ctx) => {
-    const x = PAD;
-    const y = PAD;
-    roundRect(ctx, x, y, S, S, 16);
-    const body = ctx.createLinearGradient(0, y, 0, y + S);
-    body.addColorStop(0, skin.body[0]);
-    body.addColorStop(0.55, skin.body[1]);
-    body.addColorStop(1, skin.body[2]);
-    ctx.fillStyle = body;
-    ctx.shadowColor = skin.glow;
-    ctx.shadowBlur = 14;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    if (skin.stars) {
-      ctx.save();
-      roundRect(ctx, x, y, S, S, 16);
-      ctx.clip();
-      const rng = createRng(99);
-      for (let i = 0; i < 22; i++) {
-        ctx.beginPath();
-        ctx.arc(x + rng.range(4, S - 4), y + rng.range(4, S - 4), rng.range(0.6, 1.8), 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255,255,255,${rng.range(0.4, 1).toFixed(2)})`;
-        ctx.fill();
-      }
-      ctx.restore();
-    }
-
-    roundRect(ctx, x, y, S, S, 16);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-    ctx.stroke();
-
-    // Glossy highlight.
-    roundRect(ctx, x + 7, y + 5, S - 14, S * 0.32, 10);
-    ctx.fillStyle = 'rgba(255,255,255,0.28)';
-    ctx.fill();
-
-    // Eyes looking forward.
-    for (const ex of [x + 30, x + 46]) {
-      ctx.beginPath();
-      ctx.ellipse(ex, y + 26, 7.5, 9.5, 0, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(ex + 2.5, y + 27, 4.2, 0, Math.PI * 2);
-      ctx.fillStyle = '#120530';
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(ex + 4, y + 25, 1.5, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-    }
-    // Smile.
-    ctx.beginPath();
-    ctx.arc(x + 39, y + 39, 7, 0.15 * Math.PI, 0.85 * Math.PI);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#120530';
-    ctx.lineCap = 'round';
-    ctx.stroke();
-  });
-}
-
-function drawPlayer(scene) {
-  for (const skin of SKINS) drawRunner(scene, skin);
-
-  canvasTexture(scene, 'bubble', 110, 110, (ctx, w, h) => {
-    const g = ctx.createRadialGradient(w / 2, h / 2, 20, w / 2, h / 2, 50);
-    g.addColorStop(0, 'rgba(57,255,136,0)');
-    g.addColorStop(0.75, 'rgba(57,255,136,0.12)');
-    g.addColorStop(1, 'rgba(57,255,136,0.45)');
-    ctx.beginPath();
-    ctx.arc(w / 2, h / 2, 48, 0, Math.PI * 2);
-    ctx.fillStyle = g;
-    ctx.fill();
-    glowStroke(ctx, '#39ff88', 12, 3);
-    ctx.beginPath();
-    ctx.arc(w / 2 - 16, h / 2 - 18, 10, Math.PI, 1.5 * Math.PI);
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-    ctx.lineWidth = 4;
-    ctx.stroke();
-  });
-}
-
-// --------------------------------------------------------------- hazards
-
-function drawSpike(scene) {
-  const { w, h } = SIZES.spike;
-  canvasTexture(scene, 'spike', w + PAD * 2, h + PAD * 2, (ctx) => {
-    ctx.beginPath();
-    ctx.moveTo(PAD, PAD + h);
-    ctx.lineTo(PAD + w / 2, PAD);
-    ctx.lineTo(PAD + w, PAD + h);
-    ctx.closePath();
-    const g = ctx.createLinearGradient(0, PAD, 0, PAD + h);
-    g.addColorStop(0, '#ffd1f4');
-    g.addColorStop(0.35, '#ff2bd6');
-    g.addColorStop(1, '#6a0f8f');
-    ctx.fillStyle = g;
-    ctx.shadowColor = '#ff2bd6';
-    ctx.shadowBlur = 14;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-    ctx.stroke();
-    // Facet.
-    ctx.beginPath();
-    ctx.moveTo(PAD + w / 2, PAD + 6);
-    ctx.lineTo(PAD + w / 2 + 4, PAD + h - 4);
-    ctx.lineTo(PAD + w - 6, PAD + h - 4);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(0,0,0,0.22)';
-    ctx.fill();
-  });
-}
-
-export function blockTextureKey(scene, w, h) {
-  const key = `block_${w}x${h}`;
-  return canvasTexture(scene, key, w + PAD * 2, h + PAD * 2, (ctx) => {
-    roundRect(ctx, PAD, PAD, w, h, 10);
-    const g = ctx.createLinearGradient(0, PAD, 0, PAD + h);
-    g.addColorStop(0, '#3b1d8f');
-    g.addColorStop(1, '#170a45');
-    ctx.fillStyle = g;
-    ctx.fill();
-    ctx.save();
-    ctx.clip();
-    // Diagonal stripes.
-    ctx.strokeStyle = 'rgba(0,245,255,0.13)';
-    ctx.lineWidth = 8;
-    for (let i = -h; i < w + h; i += 26) {
-      ctx.beginPath();
-      ctx.moveTo(PAD + i, PAD + h);
-      ctx.lineTo(PAD + i + h, PAD);
-      ctx.stroke();
-    }
-    ctx.restore();
-    roundRect(ctx, PAD, PAD, w, h, 10);
-    glowStroke(ctx, '#00f5ff', 14, 3.5);
-    // Bright top edge: the landing surface.
-    ctx.beginPath();
-    ctx.moveTo(PAD + 8, PAD + 2);
-    ctx.lineTo(PAD + w - 8, PAD + 2);
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = '#c9fdff';
-    ctx.lineCap = 'round';
-    ctx.stroke();
-  });
-}
-
-function drawSaw(scene) {
-  const r = 38;
-  const S = r * 2 + PAD * 2;
-  canvasTexture(scene, 'saw', S, S, (ctx) => {
-    const c = S / 2;
-    const teeth = 14;
-    ctx.beginPath();
-    for (let i = 0; i < teeth * 2; i++) {
-      const a = (i / (teeth * 2)) * Math.PI * 2;
-      const rad = i % 2 === 0 ? r : r - 9;
-      ctx.lineTo(c + Math.cos(a) * rad, c + Math.sin(a) * rad);
-    }
-    ctx.closePath();
-    const g = ctx.createRadialGradient(c - 8, c - 8, 4, c, c, r);
-    g.addColorStop(0, '#ffe2c4');
-    g.addColorStop(0.5, '#ff8a3d');
-    g.addColorStop(1, '#c4123f');
-    ctx.fillStyle = g;
-    ctx.shadowColor = '#ff3860';
-    ctx.shadowBlur = 16;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(c, c, r * 0.42, 0, Math.PI * 2);
-    ctx.fillStyle = '#2b0a2e';
-    ctx.fill();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#ffd23f';
-    ctx.stroke();
-    for (let i = 0; i < 3; i++) {
-      const a = (i / 3) * Math.PI * 2;
-      ctx.beginPath();
-      ctx.arc(c + Math.cos(a) * 7, c + Math.sin(a) * 7, 3, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffd23f';
-      ctx.fill();
-    }
-  });
 }
 
 // --------------------------------------------------------------- pickups
@@ -259,12 +61,6 @@ function drawCoin(scene) {
     ctx.lineWidth = 2.5;
     ctx.strokeStyle = '#fff3a8';
     ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(c, c, r - 6, 0, Math.PI * 2);
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = 'rgba(160,80,0,0.55)';
-    ctx.stroke();
-    // Star emboss.
     ctx.beginPath();
     for (let i = 0; i < 10; i++) {
       const a = -Math.PI / 2 + (i * Math.PI) / 5;
@@ -303,74 +99,126 @@ function drawGem(scene) {
     ctx.lineWidth = 2;
     ctx.strokeStyle = 'rgba(255,255,255,0.9)';
     ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x, top);
-    ctx.lineTo(x + w, top);
-    ctx.moveTo(x + w * 0.25, y);
-    ctx.lineTo(x + w * 0.38, top);
-    ctx.lineTo(x + w / 2, y + h);
-    ctx.lineTo(x + w * 0.62, top);
-    ctx.lineTo(x + w * 0.75, y);
-    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
   });
 }
 
-function drawPowerups(scene) {
+/** Round badges for power-ups (HUD timers). */
+function drawPowerupBadges(scene) {
   const S = 56 + PAD * 2;
-  const bubble = (ctx, color) => {
-    const c = S / 2;
-    ctx.beginPath();
-    ctx.arc(c, c, 28, 0, Math.PI * 2);
-    const g = ctx.createRadialGradient(c - 8, c - 10, 4, c, c, 28);
-    g.addColorStop(0, 'rgba(255,255,255,0.35)');
-    g.addColorStop(1, 'rgba(20,9,52,0.85)');
-    ctx.fillStyle = g;
-    ctx.fill();
-    glowStroke(ctx, color, 14, 3);
-  };
+  const badge = (key, color, drawIcon) =>
+    canvasTexture(scene, key, S, S, (ctx) => {
+      const c = S / 2;
+      ctx.beginPath();
+      ctx.arc(c, c, 28, 0, Math.PI * 2);
+      const g = ctx.createRadialGradient(c - 8, c - 10, 4, c, c, 28);
+      g.addColorStop(0, 'rgba(255,255,255,0.35)');
+      g.addColorStop(1, 'rgba(20,9,52,0.9)');
+      ctx.fillStyle = g;
+      ctx.fill();
+      glowStroke(ctx, color, 14, 3);
+      ctx.fillStyle = color;
+      ctx.strokeStyle = color;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      drawIcon(ctx, c);
+    });
 
-  canvasTexture(scene, 'shield', S, S, (ctx) => {
-    bubble(ctx, '#39ff88');
-    const c = S / 2;
+  badge('shield', '#39ff88', (ctx, c) => {
     ctx.beginPath();
     ctx.moveTo(c, c - 16);
     ctx.lineTo(c + 13, c - 10);
     ctx.quadraticCurveTo(c + 12, c + 10, c, c + 17);
     ctx.quadraticCurveTo(c - 12, c + 10, c - 13, c - 10);
     ctx.closePath();
-    ctx.fillStyle = '#39ff88';
     ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = '#eafff2';
-    ctx.stroke();
   });
-
-  canvasTexture(scene, 'magnet', S, S, (ctx) => {
-    bubble(ctx, '#ff3860');
-    const c = S / 2;
-    ctx.lineCap = 'butt';
-    ctx.beginPath();
-    ctx.arc(c, c - 2, 11, Math.PI, 0, false);
+  badge('magnet', '#ff3860', (ctx, c) => {
     ctx.lineWidth = 9;
-    ctx.strokeStyle = '#ff3860';
-    ctx.stroke();
     ctx.beginPath();
+    ctx.arc(c, c - 2, 11, Math.PI, 0);
     ctx.moveTo(c - 11, c - 2);
     ctx.lineTo(c - 11, c + 10);
     ctx.moveTo(c + 11, c - 2);
     ctx.lineTo(c + 11, c + 10);
     ctx.stroke();
-    ctx.fillStyle = '#e8e8f5';
-    ctx.fillRect(c - 15.5, c + 8, 9, 7);
-    ctx.fillRect(c + 6.5, c + 8, 9, 7);
+  });
+  badge('rapid', '#ff8a3d', (ctx, c) => {
+    ctx.beginPath();
+    ctx.moveTo(c + 4, c - 18);
+    ctx.lineTo(c - 10, c + 2);
+    ctx.lineTo(c, c + 2);
+    ctx.lineTo(c - 5, c + 18);
+    ctx.lineTo(c + 11, c - 4);
+    ctx.lineTo(c + 1, c - 4);
+    ctx.closePath();
+    ctx.fill();
+  });
+  badge('double', '#ffd23f', (ctx, c) => {
+    ctx.font = 'bold 24px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('x2', c, c + 1);
   });
 }
 
-// ------------------------------------------------------------ environment
+function drawHearts(scene) {
+  const heart = (key, fill, stroke) =>
+    canvasTexture(scene, key, 52, 48, (ctx) => {
+      ctx.beginPath();
+      ctx.moveTo(26, 42);
+      ctx.bezierCurveTo(4, 28, 6, 6, 26, 16);
+      ctx.bezierCurveTo(46, 6, 48, 28, 26, 42);
+      ctx.closePath();
+      if (fill) {
+        ctx.fillStyle = fill;
+        ctx.shadowColor = fill;
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = stroke;
+      ctx.stroke();
+    });
+  heart('heart', '#ff3d7f', '#ffd0e0');
+  heart('heart_empty', null, 'rgba(255,255,255,0.45)');
+}
 
-function drawEnvironment(scene) {
+/** Small runner portrait for each skin (shop cards). */
+function drawSkinSwatches(scene) {
+  for (const skin of SKINS) {
+    canvasTexture(scene, `swatch_${skin.id}`, 80, 80, (ctx) => {
+      const S = 60;
+      const x = PAD;
+      const y = PAD;
+      roundRect(ctx, x, y, S, S, 16);
+      const g = ctx.createLinearGradient(0, y, 0, y + S);
+      g.addColorStop(0, '#ffffff');
+      g.addColorStop(0.15, css(skin.body));
+      g.addColorStop(1, css(skin.accent));
+      ctx.fillStyle = g;
+      ctx.shadowColor = css(skin.glow);
+      ctx.shadowBlur = 14;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.stroke();
+      for (const ex of [x + 22, x + 38]) {
+        ctx.beginPath();
+        ctx.ellipse(ex, y + 26, 7, 9, 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(ex + 1.5, y + 27, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#120530';
+        ctx.fill();
+      }
+    });
+  }
+}
+
+function drawEffects(scene) {
   canvasTexture(scene, 'spark', 24, 24, (ctx) => {
     const g = ctx.createRadialGradient(12, 12, 0, 12, 12, 12);
     g.addColorStop(0, 'rgba(255,255,255,1)');
@@ -379,107 +227,13 @@ function drawEnvironment(scene) {
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 24, 24);
   });
-
-  canvasTexture(scene, 'pixel', 4, 4, (ctx) => {
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, 4, 4);
-  });
-
-  canvasTexture(scene, 'sky', 4, 512, (ctx) => {
-    const g = ctx.createLinearGradient(0, 0, 0, 512);
-    g.addColorStop(0, '#07021a');
-    g.addColorStop(0.55, '#1b0840');
-    g.addColorStop(0.85, '#4a0f6b');
-    g.addColorStop(1, '#ff2bd6');
+  // Red vignette shown when the player loses a heart.
+  canvasTexture(scene, 'vignette', 256, 256, (ctx) => {
+    const g = ctx.createRadialGradient(128, 128, 60, 128, 128, 180);
+    g.addColorStop(0, 'rgba(255,0,60,0)');
+    g.addColorStop(1, 'rgba(255,0,60,0.85)');
     ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 4, 512);
-  });
-
-  canvasTexture(scene, 'stars', 512, 384, (ctx) => {
-    const rng = createRng(7);
-    for (let i = 0; i < 90; i++) {
-      const r = rng.range(0.6, 1.8);
-      ctx.beginPath();
-      ctx.arc(rng.range(0, 512), rng.range(0, 384), r, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255,255,255,${rng.range(0.25, 0.9).toFixed(2)})`;
-      ctx.fill();
-    }
-  });
-
-  // Synthwave sun.
-  canvasTexture(scene, 'sun', 360, 360, (ctx) => {
-    const c = 180;
-    const g = ctx.createLinearGradient(0, 20, 0, 340);
-    g.addColorStop(0, '#ffe86b');
-    g.addColorStop(0.5, '#ff8a3d');
-    g.addColorStop(1, '#ff2bd6');
-    ctx.shadowColor = '#ff2bd6';
-    ctx.shadowBlur = 30;
-    ctx.beginPath();
-    ctx.arc(c, c, 150, 0, Math.PI * 2);
-    ctx.fillStyle = g;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.globalCompositeOperation = 'destination-out';
-    for (let i = 0; i < 7; i++) {
-      const y = c + 10 + i * 20;
-      ctx.fillRect(0, y, 360, 3 + i * 1.6);
-    }
-  });
-
-  const skyline = (key, w, h, seed, color, windows) =>
-    canvasTexture(scene, key, w, h, (ctx) => {
-      const rng = createRng(seed);
-      let x = 0;
-      while (x < w) {
-        const bw = rng.int(40, 110);
-        const bh = rng.int(h * 0.3, h * 0.95);
-        const bx = Math.min(x, w - bw);
-        ctx.fillStyle = color;
-        ctx.fillRect(bx, h - bh, bw, bh);
-        if (rng.chance(0.3)) ctx.fillRect(bx + bw / 2 - 2, h - bh - rng.int(10, 30), 4, 30);
-        if (windows) {
-          for (let wy = h - bh + 10; wy < h - 8; wy += 16) {
-            for (let wx = bx + 8; wx < bx + bw - 8; wx += 14) {
-              if (rng.chance(0.18)) {
-                ctx.fillStyle = rng.chance(0.5) ? 'rgba(0,245,255,0.55)' : 'rgba(255,43,214,0.5)';
-                ctx.fillRect(wx, wy, 5, 7);
-              }
-            }
-          }
-        }
-        x += bw + rng.int(0, 12);
-      }
-    });
-  skyline('skyline_far', 1024, 260, 11, '#2a0f55', false);
-  skyline('skyline_near', 1024, 220, 23, '#160733', true);
-
-  const T = 128;
-  canvasTexture(scene, 'ground', T, T, (ctx) => {
-    const g = ctx.createLinearGradient(0, 0, 0, T);
-    g.addColorStop(0, '#2a0b5c');
-    g.addColorStop(1, '#0b0420');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, T, T);
-    ctx.strokeStyle = 'rgba(255,43,214,0.35)';
-    ctx.lineWidth = 2;
-    for (let y = 24; y < T; y += 26) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(T, y);
-      ctx.stroke();
-    }
-    ctx.beginPath();
-    ctx.moveTo(T / 2, 6);
-    ctx.lineTo(T / 2, T);
-    ctx.moveTo(0, 6);
-    ctx.lineTo(0, T);
-    ctx.stroke();
-    // Neon running surface.
-    ctx.fillStyle = '#00f5ff';
-    ctx.fillRect(0, 0, T, 5);
-    ctx.fillStyle = 'rgba(0,245,255,0.35)';
-    ctx.fillRect(0, 5, T, 6);
+    ctx.fillRect(0, 0, 256, 256);
   });
 }
 
@@ -509,37 +263,6 @@ function drawIcons(scene) {
     ctx.lineTo(20, 52);
     ctx.closePath();
     ctx.fill();
-  });
-  const speaker = (ctx) => {
-    ctx.beginPath();
-    ctx.moveTo(8, 24);
-    ctx.lineTo(18, 24);
-    ctx.lineTo(32, 12);
-    ctx.lineTo(32, 52);
-    ctx.lineTo(18, 40);
-    ctx.lineTo(8, 40);
-    ctx.closePath();
-    ctx.fill();
-  };
-  icon('icon_sound_on', (ctx) => {
-    speaker(ctx);
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.arc(34, 32, 10, -0.9, 0.9);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(34, 32, 20, -0.9, 0.9);
-    ctx.stroke();
-  });
-  icon('icon_sound_off', (ctx) => {
-    speaker(ctx);
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.moveTo(40, 22);
-    ctx.lineTo(56, 42);
-    ctx.moveTo(56, 22);
-    ctx.lineTo(40, 42);
-    ctx.stroke();
   });
   icon('icon_home', (ctx) => {
     ctx.beginPath();
@@ -603,6 +326,18 @@ function drawIcons(scene) {
     ctx.lineTo(43, 24);
     ctx.stroke();
   });
+  icon('icon_trophy', (ctx) => {
+    ctx.beginPath();
+    ctx.moveTo(16, 8);
+    ctx.lineTo(48, 8);
+    ctx.lineTo(46, 30);
+    ctx.quadraticCurveTo(32, 44, 18, 30);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillRect(28, 38, 8, 10);
+    roundRect(ctx, 18, 48, 28, 8, 3);
+    ctx.fill();
+  });
   icon('icon_gear', (ctx) => {
     ctx.beginPath();
     for (let i = 0; i < 16; i++) {
@@ -625,11 +360,6 @@ function drawIcons(scene) {
     ctx.beginPath();
     ctx.arc(32, 22, 11, Math.PI, 0);
     ctx.stroke();
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.beginPath();
-    ctx.arc(32, 38, 6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalCompositeOperation = 'source-over';
   });
   icon('icon_back', (ctx) => {
     ctx.lineWidth = 9;
@@ -652,44 +382,68 @@ function drawIcons(scene) {
     roundRect(ctx, 12, 30, 40, 28, 6);
     ctx.fill();
   });
-  icon('icon_check', (ctx) => {
-    ctx.lineWidth = 10;
-    ctx.beginPath();
-    ctx.moveTo(12, 34);
-    ctx.lineTo(26, 48);
-    ctx.lineTo(52, 18);
-    ctx.stroke();
+  icon('icon_hat', (ctx) => {
+    roundRect(ctx, 4, 44, 56, 8, 4);
+    ctx.fill();
+    roundRect(ctx, 16, 12, 32, 36, 4);
+    ctx.fill();
   });
-  icon('icon_trophy', (ctx) => {
+  icon('icon_weapon', (ctx) => {
+    roundRect(ctx, 6, 20, 40, 16, 4);
+    ctx.fill();
+    ctx.fillRect(44, 24, 16, 8);
+    roundRect(ctx, 12, 30, 12, 24, 3);
+    ctx.fill();
+  });
+  icon('icon_trail', (ctx) => {
+    ctx.lineWidth = 7;
+    for (const [y, x0] of [
+      [18, 10],
+      [32, 4],
+      [46, 12],
+    ]) {
+      ctx.beginPath();
+      ctx.moveTo(x0, y);
+      ctx.lineTo(44, y);
+      ctx.stroke();
+    }
     ctx.beginPath();
-    ctx.moveTo(16, 8);
-    ctx.lineTo(48, 8);
-    ctx.lineTo(46, 30);
-    ctx.quadraticCurveTo(32, 44, 18, 30);
+    ctx.arc(50, 32, 9, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  icon('icon_up', (ctx) => {
+    ctx.beginPath();
+    ctx.moveTo(32, 6);
+    ctx.lineTo(56, 32);
+    ctx.lineTo(42, 32);
+    ctx.lineTo(42, 58);
+    ctx.lineTo(22, 58);
+    ctx.lineTo(22, 32);
+    ctx.lineTo(8, 32);
     ctx.closePath();
     ctx.fill();
-    ctx.fillRect(28, 38, 8, 10);
-    roundRect(ctx, 18, 48, 28, 8, 3);
-    ctx.fill();
+  });
+  icon('icon_target', (ctx) => {
     ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.arc(14, 18, 7, 0.5 * Math.PI, 1.5 * Math.PI);
+    ctx.arc(32, 32, 22, 0, Math.PI * 2);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(50, 18, 7, 1.5 * Math.PI, 0.5 * Math.PI);
+    ctx.arc(32, 32, 11, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(32, 32, 3, 0, Math.PI * 2);
+    ctx.fill();
   });
 }
 
-/** Generates every texture used by the game. Idempotent. */
+/** Generates every UI texture. Idempotent. */
 export function generateTextures(scene) {
-  drawPlayer(scene);
-  drawSpike(scene);
-  drawSaw(scene);
   drawCoin(scene);
   drawGem(scene);
-  drawPowerups(scene);
-  drawEnvironment(scene);
+  drawPowerupBadges(scene);
+  drawHearts(scene);
+  drawSkinSwatches(scene);
+  drawEffects(scene);
   drawIcons(scene);
-  for (const s of [SIZES.blockLow, SIZES.blockTall]) blockTextureKey(scene, s.w, s.h);
 }

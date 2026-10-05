@@ -1,11 +1,12 @@
-import { SCORING, WORLD } from '../config/game.config.js';
+const DEFAULT_SCORING = Object.freeze({ pointsPerMeter: 1, coinValue: 10, gemValue: 50 });
 
 /**
- * Score of a single run: distance (meters) + coin and gem bonuses.
+ * Score of a single run: distance (meters) + coin and gem values + bonus
+ * points (kills, combos).
  * The high score itself is persisted by SaveData; this class only compares.
  */
 export class ScoreManager {
-  constructor({ scoring = SCORING, pixelsPerMeter = WORLD.pixelsPerMeter, best = 0 } = {}) {
+  constructor({ scoring = DEFAULT_SCORING, pixelsPerMeter = 1, best = 0 } = {}) {
     this.scoring = scoring;
     this.pixelsPerMeter = pixelsPerMeter;
     this.best = Math.max(0, Math.floor(best) || 0);
@@ -16,7 +17,13 @@ export class ScoreManager {
     this.distancePx = 0;
     this.coins = 0;
     this.gems = 0;
+    this.bonus = 0;
     this.passedBest = false;
+  }
+
+  /** Extra points (kills, combos, multipliers). */
+  addBonus(points) {
+    if (points > 0 && Number.isFinite(points)) this.bonus += Math.floor(points);
   }
 
   addDistance(px) {
@@ -37,7 +44,7 @@ export class ScoreManager {
 
   get score() {
     const s = this.scoring;
-    return this.meters * s.pointsPerMeter + this.coins * s.coinValue + this.gems * s.gemValue;
+    return this.meters * s.pointsPerMeter + this.coins * s.coinValue + this.gems * s.gemValue + this.bonus;
   }
 
   /** Returns true exactly once: the frame the current score beats the previous best. */

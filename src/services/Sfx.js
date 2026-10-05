@@ -38,6 +38,24 @@ const SOUNDS = {
   revive: [{ type: 'triangle', from: 200, to: 1000, dur: 0.5, vol: 0.14 }],
   tick: [{ type: 'square', from: 440, to: 440, dur: 0.08, vol: 0.08 }],
   go: [{ type: 'square', from: 880, to: 880, dur: 0.2, vol: 0.1 }],
+  shoot: [{ type: 'square', from: 1400, to: 500, dur: 0.07, vol: 0.05 }],
+  hit: [{ type: 'square', from: 300, to: 180, dur: 0.05, vol: 0.06 }],
+  explode: [
+    { type: 'noise', dur: 0.28, vol: 0.2 },
+    { type: 'sawtooth', from: 220, to: 40, dur: 0.3, vol: 0.1 },
+  ],
+  hurt: [
+    { type: 'sawtooth', from: 220, to: 90, dur: 0.22, vol: 0.14 },
+    { type: 'noise', dur: 0.12, vol: 0.12 },
+  ],
+  enemyShot: [{ type: 'sine', from: 700, to: 260, dur: 0.18, vol: 0.05 }],
+  alarm: [
+    { type: 'square', from: 440, to: 660, dur: 0.25, vol: 0.08 },
+    { type: 'square', from: 440, to: 660, dur: 0.25, vol: 0.08, delay: 0.32 },
+    { type: 'square', from: 440, to: 660, dur: 0.25, vol: 0.08, delay: 0.64 },
+  ],
+  slide: [{ type: 'noise', dur: 0.18, vol: 0.06 }],
+  bump: [{ type: 'triangle', from: 160, to: 110, dur: 0.08, vol: 0.12 }],
   newBest: [
     { type: 'triangle', from: 784, to: 784, dur: 0.1, vol: 0.12 },
     { type: 'triangle', from: 1047, to: 1047, dur: 0.1, vol: 0.12, delay: 0.1 },

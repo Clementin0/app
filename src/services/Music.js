@@ -8,12 +8,36 @@ const BPM = 112;
 const STEP = 60 / BPM / 4; // a sixteenth note
 const LOOKAHEAD = 0.15;
 
-// Am - F - C - G, one bar each. MIDI note numbers.
-const CHORDS = [
-  [57, 60, 64],
-  [53, 57, 60],
-  [48, 52, 55],
-  [55, 59, 62],
+// One progression per zone (MIDI notes, one chord per bar).
+const PROGRESSIONS = [
+  // City: Am - F - C - G
+  [
+    [57, 60, 64],
+    [53, 57, 60],
+    [48, 52, 55],
+    [55, 59, 62],
+  ],
+  // Desert: Dm - Bb - F - C
+  [
+    [50, 53, 57],
+    [46, 50, 53],
+    [53, 57, 60],
+    [48, 52, 55],
+  ],
+  // Ice: Em - C - G - D
+  [
+    [52, 55, 59],
+    [48, 52, 55],
+    [55, 59, 62],
+    [50, 54, 57],
+  ],
+  // Inferno: Cm - Ab - Eb - Bb
+  [
+    [48, 51, 55],
+    [44, 48, 51],
+    [51, 55, 58],
+    [46, 50, 53],
+  ],
 ];
 const ARP = [0, 1, 2, 1, 0, 2, 1, 2];
 
@@ -24,7 +48,8 @@ export class Music {
     this.getContext = getContext;
     this.enabled = enabled;
     this.playing = false;
-    this.intensity = 0; // 0 = menu (no drums), 1 = gameplay
+    this.intensity = 0; // 0 = menu (no drums), 1 = gameplay, 2 = boss fight
+    this.progression = PROGRESSIONS[0];
     this.ducked = false;
     this.timer = null;
     this.step = 0;
@@ -95,6 +120,11 @@ export class Music {
     this.intensity = intensity;
   }
 
+  /** Switches chord progression (one per zone theme), from the next bar. */
+  setZone(index) {
+    this.progression = PROGRESSIONS[((index % PROGRESSIONS.length) + PROGRESSIONS.length) % PROGRESSIONS.length];
+  }
+
   /** Lower volume behind menus (pause, game over). */
   duck(on) {
     this.ducked = on;
@@ -123,7 +153,7 @@ export class Music {
   }
 
   _playStep(step, t) {
-    const chord = CHORDS[Math.floor(step / 16)];
+    const chord = this.progression[Math.floor(step / 16)];
     const inBar = step % 16;
 
     // Bass on eighths, octave jump on the off-beats.
@@ -137,6 +167,11 @@ export class Music {
       if (inBar % 4 === 0) this._kick(t);
       if (inBar === 4 || inBar === 12) this._snare(t);
       if (inBar % 4 === 2) this._hat(t);
+    }
+    if (this.intensity > 1) {
+      // Boss: driving off-beat hats and a high octave arpeggio.
+      if (inBar % 2 === 1) this._hat(t);
+      if (inBar % 2 === 0) this._arp(hz(chord[ARP[(inBar + 3) % 8]] + 24), t);
     }
   }
 

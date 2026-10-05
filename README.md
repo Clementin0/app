@@ -1,20 +1,20 @@
 # Neon Dash
 
-Endless runner 2D in stile synthwave per Android, scritto in **HTML5/JavaScript con Phaser 3**, confezionato con **Capacitor 8** e monetizzato con **Google AdMob** (`@capacitor-community/admob`).
-Grafica, effetti sonori e colonna sonora sono generati proceduralmente (Canvas 2D e Web Audio): il gioco non dipende da alcun file di asset esterno.
+Runner sparatutto **3D** in stile synthwave per Android. Il mondo 3D è disegnato con **Three.js**, l'interfaccia con **Phaser 3**; il gioco è confezionato con **Capacitor 8** e monetizzato con **Google AdMob** (`@capacitor-community/admob`).
+Modelli 3D, texture, effetti sonori e colonna sonora sono generati proceduralmente (geometrie Three.js, Canvas 2D e Web Audio): il gioco non dipende da alcun file di asset esterno.
 
-| Menu | Gioco | Game Over |
+| Menu | Gioco | Boss |
 | --- | --- | --- |
-| ![Menu](docs/screenshots/menu.png) | ![Gioco](docs/screenshots/gameplay.png) | ![Game over](docs/screenshots/game-over.png) |
-| **Negozio** | **Record in pista** | **Impostazioni** |
-| ![Negozio](docs/screenshots/shop.png) | ![Record](docs/screenshots/record.png) | ![Impostazioni](docs/screenshots/settings.png) |
+| ![Menu](docs/screenshots/menu.png) | ![Gioco](docs/screenshots/gameplay.png) | ![Boss](docs/screenshots/boss.png) |
+| **Negozio** | **Game Over** | **Impostazioni** |
+| ![Negozio](docs/screenshots/shop.png) | ![Game over](docs/screenshots/game-over.png) | ![Impostazioni](docs/screenshots/settings.png) |
 
 ## Scelte di progetto
 
 | Parametro | Valore |
 | --- | --- |
-| Genere | Endless Runner |
-| Meccanica | Il personaggio corre da solo; si salta ostacoli (spine, blocchi, seghe, burroni) raccogliendo monete e gemme; la velocità aumenta col tempo |
+| Genere | Runner 3D a 3 corsie con combattimento |
+| Meccanica | Il personaggio corre da solo; cambi corsia, salti e scivoli per evitare gli ostacoli e spari ai nemici; ogni zona finisce con un boss |
 | Orientamento | **Landscape** (bloccato in `AndroidManifest.xml` con `sensorLandscape`) |
 | Nome app | Neon Dash |
 | App ID | `com.clementin0.neondash` (modificabile in `capacitor.config.json`) |
@@ -22,17 +22,49 @@ Grafica, effetti sonori e colonna sonora sono generati proceduralmente (Canvas 2
 
 ## Gameplay
 
-- **Tocca** per saltare, **tieni premuto** per saltare più in alto, **tocca in aria** per il doppio salto (con coyote time e buffer dell'input per comandi reattivi).
-- Ostacoli: spine, blocchi (puoi atterrarci sopra, ma colpirli di lato è fatale), seghe rotanti basse e alte (per quelle alte resta a terra) e burroni.
-- I pattern si sbloccano livello dopo livello (uno ogni 15 s) e la velocità sale con una rampa esponenziale da 430 a 1050 px/s. La distanza tra gli ostacoli è calcolata sulla fisica del salto, quindi ogni sequenza è superabile: nei test un bot sopravvive 3 minuti su 8 seed diversi.
-- Collezionabili: **monete** (+10), **gemme** (+50, raggiungibili col doppio salto), **scudo** (assorbe un colpo) e **magnete** (attira le monete per 8 s).
-- **Punteggio** = metri percorsi + bonus di monete e gemme. In pista una bandiera verde **RECORD** segna la tua distanza migliore.
-- **Negozio**: 8 skin per il personaggio, acquistabili con monete (da 150 a 1.200) o gemme (25 e 60). Un badge nel menu avvisa quando puoi permetterti una skin nuova. La skin scelta si vede in gioco e nella corsa demo del menu.
-- **Impostazioni**: musica, effetti sonori, vibrazione, lingua e (se richiesto dal GDPR) modifica del consenso privacy. Si aprono dal menu e dalla pausa.
-- **Audio**: colonna sonora synthwave generata in tempo reale (più tranquilla nei menu, con batteria in gioco, abbassata in pausa) ed effetti sintetizzati.
-- **Vibrazione** (Capacitor Haptics) su morte, scudo, power-up e acquisti.
-- Salvataggio in **LocalStorage**: high score, distanza migliore, monete e gemme, partite giocate, skin, impostazioni.
-- Gameloop completo: Menu (con corsa demo giocata dall'IA) → Gioco (HUD con punti, record, monete, gemme, power-up e pausa) → Pausa (riprendi con conto alla rovescia, ricomincia, menu, impostazioni) → Game Over (riepilogo, **Continua**, **Rigioca**, **Menu**).
+**Comandi**
+
+| Gesto | Azione |
+| --- | --- |
+| Swipe ← / → | cambia corsia |
+| Swipe ↑ | salta (si atterra anche sopra le piattaforme) |
+| Swipe ↓ | scivola sotto le travi (in aria: picchiata) |
+| Tocco | spara un colpo |
+| Tieni premuto | fuoco automatico (puoi cambiare corsia mentre spari) |
+
+Un solo dito può concatenare direzioni diverse (es. sinistra e poi su). Nel browser: frecce o WASD, SPAZIO per sparare, P o ESC per la pausa.
+
+**Nemici e ostacoli**
+
+- **Robot** che camminano verso di te, **casse** da distruggere, **droni** che si fermano davanti a te, sparano plasma e cambiano corsia. I colpi di plasma si possono abbattere.
+- Ostacoli: barriere da saltare, travi laser da passare scivolando, muri che bloccano la corsia e piattaforme su cui correre.
+- Ogni nemico abbattuto dà punti e lascia cadere monete. Le uccisioni ravvicinate creano una **combo** (fino a ×8).
+- **Boss**: dopo 700 m di ogni zona arriva un'astronave madre con barra della vita. Spara raffiche che lasciano una corsia libera, oppure colpi mirati. Se lo abbatti prendi +40 monete, +3 gemme e un grosso bonus. Se resisti 45 secondi se ne va.
+- **4 zone** a tema con colori, musica e scenario diversi: Città Neon, Deserto al tramonto, Griglia di ghiaccio, Inferno. La difficoltà sale a ogni zona.
+- Hai **3 cuori** (5 con i potenziamenti). Nemici e plasma tolgono un cuore; schiantarsi contro un ostacolo è fatale.
+- Power-up: **scudo**, **magnete**, **fuoco rapido**, **punti doppi**, **cuore extra**.
+
+**Personalizzazione e progressione**
+
+- **Negozio** con anteprima 3D del personaggio. Tocchi un oggetto per provarlo, poi lo compri o lo equipaggi. Cinque schede:
+  - **Skin**: 8 colori.
+  - **Cappelli**: 7 cappelli più "nessuno".
+  - **Armi**: blaster, doppietta, ventaglio a 3 colpi e laser perforante, ognuna con un modo diverso di sparare.
+  - **Scie**: 6 scie di particelle.
+  - **Potenziamenti**: danno, cadenza di fuoco, durata del magnete, cuori extra, scudo iniziale.
+- Si paga in monete; gli oggetti rari costano gemme. Un video con ricompensa dà **+50 monete** ogni 3 minuti.
+- **Missioni**: 3 obiettivi attivi alla volta (abbattere droni o boss, combo, distanza, monete...). Danno monete o gemme e, una volta completati, vengono sostituiti da missioni più difficili.
+- **Punteggio** = distanza + monete e gemme + bonus di uccisioni e boss. High score, distanza migliore, monete, gemme, oggetti, potenziamenti, missioni, statistiche e impostazioni sono salvati in **LocalStorage**.
+
+**Interfaccia e sistema**
+
+- Gameloop completo:
+  - **Menu**, con una corsa demo 3D giocata dall'IA e il pannello delle missioni;
+  - **Gioco**, con HUD per punti, cuori, monete, avanzamento della zona, power-up, combo, barra del boss e pausa;
+  - **Pausa**: riprendi con conto alla rovescia, ricomincia, menu, impostazioni;
+  - **Game Over**: riepilogo con uccisioni e zona raggiunta, missioni completate, **Continua**, **Rigioca**, **Menu**.
+- **Impostazioni**: musica, effetti sonori, vibrazione, lingua, **qualità grafica** (bassa, media, alta: risoluzione, antialiasing, densità dello scenario, particelle) e, se richiesto dal GDPR, consenso privacy.
+- **Audio** sintetizzato in tempo reale: ogni zona ha la sua progressione di accordi e la musica si intensifica durante il boss. **Vibrazione** (Capacitor Haptics) su colpi, danni, boss e acquisti.
 - Tasto indietro di Android: chiude le impostazioni, mette in pausa / riprende, torna al menu, esce dall'app. Il gioco va in pausa da solo quando l'app passa in background.
 
 ## Monetizzazione (AdMob)
@@ -50,7 +82,7 @@ Dettagli di implementazione ([`src/services/AdService.js`](src/services/AdServic
 
 - **Consenso GDPR (UMP)**: prima di inizializzare l'SDK viene raccolto il consenso. Il modulo privacy resta raggiungibile dalle impostazioni.
 - **Interstitial**: una partita conta come "completata" quando il giocatore lascia il Game Over (Rigioca o Menu), così l'annuncio non interrompe mai l'offerta di Continua. Se alla terza partita l'annuncio non è ancora caricato, viene mostrato alla partita successiva.
-- **Rewarded**: su Android `showRewardVideoAd()` si risolve solo quando la ricompensa viene ottenuta. Per questo il servizio usa gli eventi `Rewarded` e `Dismissed` (con un breve margine per una ricompensa che arriva in ritardo) e un timeout di sicurezza. La ricompensa viene concessa solo se il video è stato visto davvero. Il revive rimuove gli ostacoli vicini, ripristina il terreno, dà 2,5 s di invulnerabilità e fa partire un conto alla rovescia.
+- **Rewarded**: su Android `showRewardVideoAd()` si risolve solo quando la ricompensa viene ottenuta. Per questo il servizio usa gli eventi `Rewarded` e `Dismissed` (con un breve margine per una ricompensa che arriva in ritardo) e un timeout di sicurezza. La ricompensa viene concessa solo se il video è stato visto davvero. Il revive rimuove ostacoli, nemici e colpi vicini, ripristina tutti i cuori, dà 3 s di invulnerabilità e fa partire un conto alla rovescia.
 - Il layout di Menu, Negozio, Impostazioni e Game Over lascia libero lo spazio del banner, usando l'altezza reale comunicata dall'evento `bannerAdSizeChanged`.
 - Durante gli annunci a schermo intero musica ed effetti vanno in pausa. Ogni errore dell'SDK viene intercettato e non blocca mai il gioco.
 - Nel browser (`npm run dev`) un **mock** ([`MockAdMob.js`](src/services/MockAdMob.js)) simula banner, interstitial e video con ricompensa, così si può provare l'intero flusso senza dispositivo.
@@ -60,19 +92,24 @@ Dettagli di implementazione ([`src/services/AdService.js`](src/services/AdServic
 ```
 src/
   config/admob.config.js    ID AdMob (test/produzione) e regole di frequenza
-  config/game.config.js     fisica, velocità, punteggi, power-up
-  config/skins.js           skin del negozio e monete gratuite
+  config/game3d.config.js   corsie, fisica, velocità, armi, nemici, boss, punteggi, power-up
+  config/zones.js           temi delle 4 zone (colori, scenario, musica)
+  config/cosmetics.js       catalogo del negozio: skin, cappelli, armi, scie
+  config/upgrades.js        potenziamenti e loadout della partita
   i18n.js                   testi in italiano e inglese
-  logic/                    simulazione pura (testabile in Node, senza Phaser)
-    RunnerWorld.js          scorrimento, fisica, collisioni, pickup, revive
-    Spawner.js              pattern di ostacoli e monete
-    Difficulty.js           rampa di velocità, livelli, distanze sicure
-    ScoreManager.js         punteggio della partita
-    Autopilot.js            IA per la demo del menu e i test
+  logic3d/                  simulazione pura (testabile in Node, senza Phaser né Three.js)
+    LaneWorld.js            corsie, salto/scivolata, spari, nemici, boss, zone, danni, pickup, revive
+    LaneSpawner.js          pattern di ostacoli, nemici e monete
+    Autopilot3D.js          IA per la demo del menu e i test
+    Missions.js             missioni con ricompense e livelli crescenti
+  logic/ScoreManager.js     punteggio della partita
+  three/                    rendering 3D: Stage (renderer e qualità), Environment (strada, città, cielo),
+                            models (ostacoli, nemici, boss, pickup), Character, Particles,
+                            GameView (partita e demo), PreviewView (anteprima del negozio)
   services/                 AdService, MockAdMob, SaveData (LocalStorage), Sfx e Music (Web Audio),
                             Haptics, Platform (tasto indietro, background)
-  scenes/                   Boot, Menu, Shop, Game, Pause, GameOver, Settings
-  ui/                       texture procedurali, bottoni, interruttori, HUD, sfondo parallax, renderer del mondo
+  scenes/                   Boot, Menu, Shop, Game, Pause, GameOver, Settings (interfaccia Phaser)
+  ui/                       texture procedurali dell'interfaccia, bottoni, interruttori, HUD
 tests/                      test unitari Vitest
 scripts/
   verify-runtime.mjs        test end-to-end nel browser headless
@@ -88,7 +125,7 @@ store/                      icona 512×512 e feature graphic 1024×500 per il Pl
 ```bash
 npm install            # dipendenze
 npm run dev            # gioco nel browser con hot reload (annunci simulati)
-npm test               # 77 test unitari (logica, punteggio, salvataggi, negozio, lingue, trigger degli annunci)
+npm test               # 77 test unitari (mondo 3D, armi, boss, missioni, salvataggi, negozio, lingue, annunci)
 npm run build          # bundle web di produzione in dist/
 npm run verify         # gioca la build in Chromium headless e verifica tutto il flusso
 npm run cap:sync       # build + npx cap sync android + configurazione Android
@@ -96,14 +133,17 @@ npm run cap:open       # apre il progetto in Android Studio
 npm run release:check  # controlla che la release non usi gli ID AdMob di test
 ```
 
-`npm run verify` emula un telefono in landscape con touch e controlla 27 punti. Tra questi:
-- avvio e banner nel menu, banner nascosto in gioco;
-- salto, punteggio, pausa e ripresa;
-- high score in LocalStorage;
+`npm run verify` emula un telefono in landscape con touch e gioca davvero, con swipe e tocchi. Controlla 40 punti, tra cui:
+- avvio dei due renderer (Three.js e Phaser) e demo 3D nel menu;
+- banner nel menu, nascosto in gioco;
+- cambio corsia, salto e scivolata con gli swipe; sparo con tocco e fuoco automatico; uccisione di un nemico;
+- arrivo del boss, sua sconfitta con ricompensa e passaggio alla zona 2;
+- pausa e ripresa;
+- high score, missioni e statistiche in LocalStorage;
 - revive con video, una sola seconda possibilità per partita, interstitial alla terza partita completata;
-- impostazioni e cambio lingua;
-- acquisto di una skin e +50 monete con video;
-- musica attiva in gioco e assenza di errori in console.
+- impostazioni: vibrazione, qualità grafica, lingua;
+- negozio: anteprima 3D, acquisto di skin e potenziamento, +50 monete con video, skin e danno applicati in partita;
+- musica attiva e assenza di errori in console.
 
 Gli screenshot finiscono in `verify-output/`.
 
@@ -116,7 +156,7 @@ npm run cap:sync
 cd android && ./gradlew assembleDebug     # APK in android/app/build/outputs/apk/debug/
 ```
 
-`versionName` e `versionCode` vengono dal campo `version` di `package.json` (1.1.0 → versionCode 10100).
+`versionName` e `versionCode` vengono dal campo `version` di `package.json` (2.0.0 → versionCode 20000).
 
 La GitHub Action [`.github/workflows/android.yml`](.github/workflows/android.yml) ha tre job:
 
@@ -136,7 +176,13 @@ La GitHub Action [`.github/workflows/android.yml`](.github/workflows/android.yml
 
 ## Note tecniche
 
-- Risoluzione base 1280×720 con `Phaser.Scale.EXPAND`: il canvas riempie qualsiasi rapporto d'aspetto (18:9, 20:9, tablet) senza bande nere e l'interfaccia si ancora ai bordi.
+- Due canvas sovrapposti: sotto il `WebGLRenderer` di Three.js (`#stage`), sopra il canvas trasparente di Phaser (`#game`) con interfaccia e input. Il rendering 3D avviene a ogni passo del gameloop di Phaser, così i due livelli restano sincronizzati.
+- La logica di gioco (`src/logic3d`) non dipende né da Phaser né da Three.js: le viste ne leggono lo stato e reagiscono a una coda di eventi (colpi, uccisioni, boss...). Per questo fisica, collisioni, armi, boss, missioni e revive sono coperti da test deterministici in Node. Un'IA gioca 3 minuti di partita su 12 seed diversi, attraversando zone e battendo boss, per verificare che i pattern siano sempre superabili.
+- Prestazioni su mobile:
+  - materiali e geometrie condivisi, mesh riutilizzate in pool, edifici in `InstancedMesh`;
+  - circa 80 draw call per frame;
+  - risoluzione e antialiasing regolabili con la qualità grafica.
+- Risoluzione base dell'interfaccia 1280×720 con `Phaser.Scale.EXPAND`: si adatta a qualsiasi rapporto d'aspetto (18:9, 20:9, tablet) senza bande nere.
 - Schermo intero immersivo (barre di sistema nascoste, riapplicato dopo gli annunci) in `MainActivity.java`. Sfondo scuro su splash e finestra, per evitare il flash bianco all'avvio.
-- La logica di gioco (`src/logic`) non dipende da Phaser: le scene si limitano a disegnarne lo stato. Per questo fisica, collisioni, punteggio e revive sono coperti da test deterministici in Node.
 - Le scene Phaser vengono riutilizzate tra una visita e l'altra: lo stato di ogni scena viene azzerato in `init()` e i listener vengono rimossi allo `shutdown`.
+- I salvataggi delle versioni 1.x (record, monete, skin, impostazioni) vengono migrati automaticamente.

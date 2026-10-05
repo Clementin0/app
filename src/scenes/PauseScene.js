@@ -67,6 +67,7 @@ export class PauseScene extends Phaser.Scene {
     this.buttons.forEach((b) => b.setEnabled(false));
     const game = this.scene.get('Game');
     game.commitProgress?.();
+    game.finalizeRun?.();
     this.scene.stop('Game');
     this.scene.start(target);
   }

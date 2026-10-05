@@ -13,4 +13,6 @@ export const services = {
   haptics: null,
   /** @type {import('./AdService.js').AdService} */
   ads: null,
+  /** @type {import('../three/Stage.js').Stage} */
+  stage: null,
 };

@@ -1,27 +1,38 @@
-import { DEFAULT_SKIN, FREE_COINS, getSkin, SKINS } from '../config/skins.js';
+import { CATALOG, currencyOf, DEFAULT_EQUIPPED, FREE_COINS, getItem } from '../config/cosmetics.js';
+import { getUpgrade, nextCost, UPGRADES } from '../config/upgrades.js';
+import { emptyMissionsState } from '../logic3d/Missions.js';
 
 /**
  * Persistent progress stored in LocalStorage (inside the Capacitor WebView
  * this survives app restarts). Falls back to memory when storage is
- * unavailable (private mode, blocked cookies, Node tests).
+ * unavailable (private mode, blocked cookies, Node tests). Saves from
+ * v1.0 / v1.1 are migrated transparently.
  */
 
 export const SAVE_KEY = 'neondash.save.v1';
 
-const DEFAULTS = Object.freeze({
-  highScore: 0,
-  bestDistance: 0,
-  totalCoins: 0,
-  totalGems: 0,
-  gamesPlayed: 0,
-  music: true,
-  sfx: true,
-  vibration: true,
-  lang: null, // null = follow the device language
-  ownedSkins: [DEFAULT_SKIN],
-  selectedSkin: DEFAULT_SKIN,
-  lastFreeCoinsAt: 0,
-});
+const QUALITIES = ['low', 'medium', 'high'];
+
+function defaults() {
+  return {
+    highScore: 0,
+    bestDistance: 0,
+    totalCoins: 0,
+    totalGems: 0,
+    gamesPlayed: 0,
+    music: true,
+    sfx: true,
+    vibration: true,
+    lang: null, // null = follow the device language
+    quality: 'medium',
+    owned: { skin: ['neon'], hat: ['none'], weapon: ['blaster'], trail: ['neon'] },
+    equipped: { ...DEFAULT_EQUIPPED },
+    upgrades: Object.fromEntries(UPGRADES.map((u) => [u.id, 0])),
+    missions: emptyMissionsState(),
+    lifetime: { kills: 0, bosses: 0, runs: 0 },
+    lastFreeCoinsAt: 0,
+  };
+}
 
 function defaultStorage() {
   try {
@@ -45,7 +56,7 @@ export class SaveData {
   constructor(storage = defaultStorage(), now = () => Date.now()) {
     this.storage = storage;
     this.now = now;
-    this.data = clone(DEFAULTS);
+    this.data = defaults();
     this.load();
   }
 
@@ -53,30 +64,57 @@ export class SaveData {
     if (!this.storage) return this.data;
     try {
       const raw = this.storage.getItem(SAVE_KEY);
-      const p = raw ? JSON.parse(raw) : {};
-      // v1.0 stored a single "muted" flag.
-      const legacySound = typeof p.muted === 'boolean' ? !p.muted : true;
-      const owned = Array.isArray(p.ownedSkins) ? p.ownedSkins.filter((id) => getSkin(id).id === id) : [];
-      if (!owned.includes(DEFAULT_SKIN)) owned.unshift(DEFAULT_SKIN);
-      this.data = {
-        highScore: toCount(p.highScore),
-        bestDistance: toCount(p.bestDistance),
-        totalCoins: toCount(p.totalCoins),
-        totalGems: toCount(p.totalGems),
-        gamesPlayed: toCount(p.gamesPlayed),
-        music: toBool(p.music, legacySound),
-        sfx: toBool(p.sfx, legacySound),
-        vibration: toBool(p.vibration, true),
-        lang: typeof p.lang === 'string' ? p.lang : null,
-        ownedSkins: [...new Set(owned)],
-        selectedSkin: owned.includes(p.selectedSkin) ? p.selectedSkin : DEFAULT_SKIN,
-        lastFreeCoinsAt: toCount(p.lastFreeCoinsAt),
-      };
+      this.data = this._sanitize(raw ? JSON.parse(raw) : {});
     } catch {
       // Corrupted save: start fresh rather than crash.
-      this.data = clone(DEFAULTS);
+      this.data = defaults();
     }
     return this.data;
+  }
+
+  _sanitize(p) {
+    const d = defaults();
+    // v1.0 stored a single "muted" flag.
+    const legacySound = typeof p.muted === 'boolean' ? !p.muted : true;
+
+    const owned = {};
+    const equipped = {};
+    for (const cat of Object.keys(CATALOG)) {
+      let list = Array.isArray(p.owned?.[cat]) ? p.owned[cat] : [];
+      // v1.1 stored skins as ownedSkins / selectedSkin.
+      if (cat === 'skin' && Array.isArray(p.ownedSkins)) list = [...list, ...p.ownedSkins];
+      list = [...new Set([DEFAULT_EQUIPPED[cat], ...list])].filter((id) => getItem(cat, id));
+      owned[cat] = list;
+      const want = p.equipped?.[cat] ?? (cat === 'skin' ? p.selectedSkin : undefined);
+      equipped[cat] = list.includes(want) ? want : DEFAULT_EQUIPPED[cat];
+    }
+
+    const upgrades = {};
+    for (const u of UPGRADES) upgrades[u.id] = Math.min(u.costs.length, toCount(p.upgrades?.[u.id]));
+
+    const m = p.missions && Array.isArray(p.missions.active) ? p.missions : emptyMissionsState();
+    return {
+      ...d,
+      highScore: toCount(p.highScore),
+      bestDistance: toCount(p.bestDistance),
+      totalCoins: toCount(p.totalCoins),
+      totalGems: toCount(p.totalGems),
+      gamesPlayed: toCount(p.gamesPlayed),
+      music: toBool(p.music, legacySound),
+      sfx: toBool(p.sfx, legacySound),
+      vibration: toBool(p.vibration, true),
+      lang: typeof p.lang === 'string' ? p.lang : null,
+      quality: QUALITIES.includes(p.quality) ? p.quality : d.quality,
+      owned,
+      equipped,
+      upgrades,
+      missions: {
+        active: m.active.filter((x) => x && typeof x.id === 'string').map((x) => ({ id: x.id, progress: toCount(x.progress), target: toCount(x.target) || 1, reward: { coins: toCount(x.reward?.coins), gems: toCount(x.reward?.gems) } })),
+        completed: toCount(m.completed),
+      },
+      lifetime: { kills: toCount(p.lifetime?.kills), bosses: toCount(p.lifetime?.bosses), runs: toCount(p.lifetime?.runs) },
+      lastFreeCoinsAt: toCount(p.lastFreeCoinsAt),
+    };
   }
 
   persist() {
@@ -122,11 +160,24 @@ export class SaveData {
     return this.data.gamesPlayed;
   }
 
+  addLifetime({ kills = 0, bosses = 0 } = {}) {
+    this.data.lifetime.kills += toCount(kills);
+    this.data.lifetime.bosses += toCount(bosses);
+    this.data.lifetime.runs += 1;
+    this.persist();
+  }
+
   // ------------------------------------------------------------ settings
 
   setSetting(key, value) {
-    if (!['music', 'sfx', 'vibration'].includes(key)) throw new Error(`Unknown setting ${key}`);
-    this.data[key] = !!value;
+    if (key === 'quality') {
+      if (!QUALITIES.includes(value)) throw new Error(`Unknown quality ${value}`);
+      this.data.quality = value;
+    } else if (['music', 'sfx', 'vibration'].includes(key)) {
+      this.data[key] = !!value;
+    } else {
+      throw new Error(`Unknown setting ${key}`);
+    }
     this.persist();
   }
 
@@ -135,36 +186,68 @@ export class SaveData {
     this.persist();
   }
 
-  // --------------------------------------------------------------- skins
+  // ------------------------------------------------------ shop: cosmetics
 
-  ownsSkin(id) {
-    return this.data.ownedSkins.includes(id);
+  owns(category, id) {
+    return this.data.owned[category]?.includes(id) ?? false;
   }
 
-  /** Buys a skin. Returns 'bought', 'owned' or 'insufficient'. */
-  buySkin(id) {
-    const skin = getSkin(id);
-    if (skin.id !== id) throw new Error(`Unknown skin ${id}`);
-    if (this.ownsSkin(id)) return 'owned';
-    const wallet = skin.currency === 'gems' ? 'totalGems' : 'totalCoins';
-    if (this.data[wallet] < skin.price) return 'insufficient';
-    this.data[wallet] -= skin.price;
-    this.data.ownedSkins.push(id);
-    this.data.selectedSkin = id;
+  equippedId(category) {
+    return this.data.equipped[category];
+  }
+
+  /** Buys an item. Returns 'bought', 'owned' or 'insufficient'. */
+  buy(category, id) {
+    const item = getItem(category, id);
+    if (!item) throw new Error(`Unknown item ${category}/${id}`);
+    if (this.owns(category, id)) return 'owned';
+    const wallet = currencyOf(item) === 'gems' ? 'totalGems' : 'totalCoins';
+    if (this.data[wallet] < item.price) return 'insufficient';
+    this.data[wallet] -= item.price;
+    this.data.owned[category].push(id);
+    this.data.equipped[category] = id;
     this.persist();
     return 'bought';
   }
 
-  /** True when at least one locked skin can be bought right now. */
-  canAffordNewSkin() {
-    return SKINS.some((s) => !this.ownsSkin(s.id) && this.data[s.currency === 'gems' ? 'totalGems' : 'totalCoins'] >= s.price);
-  }
-
-  selectSkin(id) {
-    if (!this.ownsSkin(id)) return false;
-    this.data.selectedSkin = id;
+  equip(category, id) {
+    if (!this.owns(category, id)) return false;
+    this.data.equipped[category] = id;
     this.persist();
     return true;
+  }
+
+  /** True when at least one locked item or upgrade can be bought right now. */
+  canAffordSomething() {
+    for (const [cat, list] of Object.entries(CATALOG)) {
+      for (const item of list) {
+        if (this.owns(cat, item.id)) continue;
+        const wallet = currencyOf(item) === 'gems' ? this.data.totalGems : this.data.totalCoins;
+        if (wallet >= item.price) return true;
+      }
+    }
+    return UPGRADES.some((u) => {
+      const c = nextCost(u.id, this.data.upgrades[u.id]);
+      return c !== null && this.data.totalCoins >= c;
+    });
+  }
+
+  // ------------------------------------------------------ shop: upgrades
+
+  upgradeLevel(id) {
+    return this.data.upgrades[id] ?? 0;
+  }
+
+  /** Buys the next level. Returns 'bought', 'maxed' or 'insufficient'. */
+  buyUpgrade(id) {
+    if (!getUpgrade(id)) throw new Error(`Unknown upgrade ${id}`);
+    const cost = nextCost(id, this.upgradeLevel(id));
+    if (cost === null) return 'maxed';
+    if (this.data.totalCoins < cost) return 'insufficient';
+    this.data.totalCoins -= cost;
+    this.data.upgrades[id] = this.upgradeLevel(id) + 1;
+    this.persist();
+    return 'bought';
   }
 
   // ------------------------------------------- rewarded "free coins"

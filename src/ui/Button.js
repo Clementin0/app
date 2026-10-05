@@ -60,6 +60,11 @@ export class Button extends Phaser.GameObjects.Container {
 
   _layoutContent() {
     if (!this.icon) return;
+    if (!this.icon.visible) {
+      this.text.setX(0);
+      this.sub?.setX(0);
+      return;
+    }
     const gap = 14;
     const textW = Math.max(this.text.width, this.sub?.width ?? 0);
     const total = this.icon.displayWidth + (textW > 0 ? gap + textW : 0);
