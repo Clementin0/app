@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { DEFAULT_SKIN, getSkin, skinTextureKey } from '../config/skins.js';
+import { t } from '../i18n.js';
 import { blockTextureKey } from './textures.js';
 import { COLORS, glow, hex, textStyle } from './theme.js';
 
@@ -10,10 +12,18 @@ const SAW_TEXTURE_RADIUS = 38;
  * particle effects. Shared by the game and by the menu's demo run.
  */
 export class WorldRenderer {
-  constructor(scene, world, { effects = true } = {}) {
+  /**
+   * @param {object} opts
+   * @param {boolean} opts.effects  camera shake/flash and floating texts
+   * @param {string}  opts.skin     skin id of the runner
+   * @param {number}  opts.recordPx best distance in px (0 = no marker)
+   */
+  constructor(scene, world, { effects = true, skin = DEFAULT_SKIN, recordPx = 0 } = {}) {
     this.scene = scene;
     this.world = world;
     this.effects = effects;
+    this.skin = getSkin(skin);
+    this.recordPx = recordPx;
     this.time = 0;
     this.groundSprites = new Map();
     this.sprites = new Map();
@@ -21,7 +31,7 @@ export class WorldRenderer {
 
     this.edges = scene.add.graphics().setDepth(1);
 
-    this.player = scene.add.image(0, 0, 'player').setOrigin(0.5, 0.875).setDepth(10);
+    this.player = scene.add.image(0, 0, skinTextureKey(this.skin.id)).setOrigin(0.5, 0.875).setDepth(10);
     this.bubble = scene.add.image(0, 0, 'bubble').setDepth(11).setVisible(false);
     this.magnetRing = scene.add.graphics().setDepth(9);
     this.squash = 0;
@@ -34,7 +44,7 @@ export class WorldRenderer {
         lifespan: 360,
         scale: { start: 0.7, end: 0 },
         alpha: { start: 0.7, end: 0 },
-        tint: [COLORS.cyan, COLORS.purple],
+        tint: this.skin.trail,
         frequency: 28,
         blendMode: 'ADD',
       })
@@ -74,7 +84,9 @@ export class WorldRenderer {
       })
       .setDepth(9);
 
-    this.floaters = [];
+    // Neon post marking the best distance ever reached.
+    this.recordMarker = scene.add.graphics().setDepth(3).setVisible(false);
+    this.recordLabel = glow(scene.add.text(0, 0, t('record'), textStyle(22, '#eafff2')).setOrigin(0.5, 1).setDepth(3), COLORS.green, 12).setVisible(false);
   }
 
   // ------------------------------------------------------------- effects
@@ -86,9 +98,9 @@ export class WorldRenderer {
 
   floatText(x, y, text, color = COLORS.yellow, size = 30) {
     if (!this.effects) return;
-    const t = this.scene.add.text(x, y, text, textStyle(size, hex(color))).setOrigin(0.5).setDepth(20);
-    glow(t, color, 10);
-    this.scene.tweens.add({ targets: t, y: y - 70, alpha: 0, duration: 800, ease: 'Cubic.easeOut', onComplete: () => t.destroy() });
+    const label = this.scene.add.text(x, y, text, textStyle(size, hex(color))).setOrigin(0.5).setDepth(20);
+    glow(label, color, 10);
+    this.scene.tweens.add({ targets: label, y: y - 70, alpha: 0, duration: 800, ease: 'Cubic.easeOut', onComplete: () => label.destroy() });
   }
 
   /** Visual reactions to world events. Returns the events for further handling. */
@@ -117,11 +129,11 @@ export class WorldRenderer {
           break;
         case 'shield':
           this.burstAt('green', e.x, e.y, 16);
-          this.floatText(e.x, e.y - 30, 'SCUDO!', COLORS.green);
+          this.floatText(e.x, e.y - 30, t('shield'), COLORS.green);
           break;
         case 'magnet':
           this.burstAt('red', e.x, e.y, 16);
-          this.floatText(e.x, e.y - 30, 'MAGNETE!', COLORS.red);
+          this.floatText(e.x, e.y - 30, t('magnet'), COLORS.red);
           break;
         case 'shieldBreak':
           this.burstAt('green', e.x, e.y, 26);
@@ -195,7 +207,10 @@ export class WorldRenderer {
         ts = this.scene.add.tileSprite(0, 0, TILE, TILE, 'ground').setOrigin(0, 0).setDepth(0);
         this.groundSprites.set(s.id, ts);
       }
-      ts.setPosition(left, w.groundY).setSize(right - left, height - w.groundY + 4);
+      const tw = right - left;
+      const th = height - w.groundY + 4;
+      ts.setPosition(left, w.groundY);
+      if (ts.width !== tw || ts.height !== th) ts.setSize(tw, th);
       seenGround.add(s.id);
 
       // Neon edges around pits.
@@ -250,7 +265,24 @@ export class WorldRenderer {
       }
     }
 
+    this._renderRecord();
     this._renderPlayer(dt);
+  }
+
+  _renderRecord() {
+    const w = this.world;
+    const x = w.player.x + (this.recordPx - w.score.distancePx);
+    const visible = this.recordPx > 0 && x > -40 && x < this.scene.scale.width + 40;
+    this.recordMarker.setVisible(visible);
+    this.recordLabel.setVisible(visible);
+    if (!visible) return;
+    const top = w.groundY - 250;
+    const g = this.recordMarker;
+    g.clear();
+    g.lineStyle(10, COLORS.green, 0.18).lineBetween(x, w.groundY, x, top);
+    g.lineStyle(4, COLORS.green, 0.95).lineBetween(x, w.groundY, x, top);
+    g.fillStyle(COLORS.green, 0.9).fillTriangle(x, top, x + 46, top + 16, x, top + 32);
+    this.recordLabel.setPosition(x, top - 6);
   }
 
   _renderPlayer(dt) {

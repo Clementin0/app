@@ -236,6 +236,40 @@ async function main() {
     const played = await evaluate(() => JSON.parse(localStorage.getItem('neondash.save.v1')).gamesPlayed);
     check('Games played persisted', played === 3, `gamesPlayed=${played}`);
 
+    // ------------------------------------------------ settings & i18n
+    await tapButton('Menu', 'settingsButton');
+    await sceneActive('Settings');
+    await tapButton('Settings', 'toggles.vibration');
+    await waitFor(() => JSON.parse(localStorage.getItem('neondash.save.v1')).vibration === false);
+    check('Settings: vibration toggle saved', true);
+    await tapButton('Settings', 'langButtons.en');
+    await waitFor((h) => window[h].scene('Menu')?.playButton?.text.text === 'PLAY', H);
+    check('Settings: language switched to English', true);
+    await shot('06-settings-en');
+    await tapButton('Settings', 'langButtons.it');
+    await waitFor((h) => window[h].scene('Menu')?.playButton?.text.text === 'GIOCA', H);
+    await tapButton('Settings', 'closeButton');
+    step = 'settings closed';
+    await waitFor((h) => !window[h].activeScenes().includes('Settings'), H);
+    check('Settings: back to Italian and closed', true);
+
+    // ------------------------------------------------------------- shop
+    const rewardsBefore = (await stats()).rewardsEarned;
+    await evaluate((h) => window[h].services.save.addCurrency(200, 0), H);
+    await tapButton('Menu', 'shopButton');
+    await sceneActive('Shop');
+    const coinsBefore = await evaluate((h) => window[h].services.save.snapshot().totalCoins, H);
+    await tapButton('Shop', 'cards.1');
+    const bought = await evaluate((h) => window[h].services.save.snapshot(), H);
+    check('Shop: skin bought with coins and equipped', bought.selectedSkin === 'bubblegum' && bought.totalCoins === coinsBefore - 150, `${coinsBefore} -> ${bought.totalCoins} coins`);
+    await tapButton('Shop', 'freeButton');
+    await waitFor(([h, n]) => window[h].services.ads.stats.rewardsEarned > n, [H, rewardsBefore], 15000);
+    await waitFor(([h, c]) => window[h].services.save.snapshot().totalCoins === c + 50, [H, bought.totalCoins]);
+    check('Shop: rewarded video grants +50 coins', true);
+    await shot('07-shop');
+    await tapButton('Shop', 'backButton');
+    await sceneActive('Menu');
+
     // Longer unattended run: the world keeps spawning without errors.
     await tapButton('Menu', 'playButton');
     await newRun();
@@ -244,6 +278,10 @@ async function main() {
     await waitFor((h) => window[h].scene('Game').world.spawner.history.length >= 3, H, 90000);
     const run = await evaluate((h) => { const w = window[h].scene('Game').world; return { state: w.state, patterns: w.spawner.history.length, entities: w.entities.length }; }, H);
     check('New run from the menu: obstacles keep spawning', run.state === 'running' && run.entities > 0, JSON.stringify(run));
+    const audio = await evaluate((h) => { const { sfx, music } = window[h].services; return { ctx: sfx.ctx?.state ?? 'none', scheduling: music.timer !== null, intensity: music.intensity }; }, H);
+    check('Audio engine running with in-game music', audio.ctx === 'running' && audio.scheduling && audio.intensity === 1, JSON.stringify(audio));
+    const skinKey = await evaluate((h) => window[h].scene('Game').view.player.texture.key, H);
+    check('Bought skin used in game', skinKey === 'player_bubblegum', skinKey);
     await shot('05-obstacles');
   } catch (err) {
     check(`Unexpected failure during "${step}"`, false, err.message.split('\n')[0]);

@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { fmt, t } from '../i18n.js';
 import { services } from '../services/services.js';
 import { Button } from '../ui/Button.js';
 import { bannerReserve, bindLayout } from '../ui/layout.js';
@@ -51,11 +52,11 @@ export class GameOverScene extends Phaser.Scene {
     bg.lineStyle(3, r.isNewBest ? COLORS.green : COLORS.pink, 1).strokeRoundedRect(-PANEL_W / 2, 0, PANEL_W, panelH, 36);
 
     const titleColor = r.isNewBest ? COLORS.green : COLORS.pink;
-    const title = glow(this.add.text(0, 58, r.isNewBest ? 'NUOVO RECORD!' : 'GAME OVER', textStyle(64)).setOrigin(0.5), titleColor, 24);
+    const title = glow(this.add.text(0, 58, r.isNewBest ? t('newRecord') : t('gameOver'), textStyle(64)).setOrigin(0.5), titleColor, 24);
 
     this.scoreText = glow(this.add.text(0, 150, '0', textStyle(84, '#ffffff')).setOrigin(0.5), COLORS.cyan, 16);
-    const best = this.add.text(-PANEL_W / 2 + 60, 222, `RECORD  ${r.best.toLocaleString('it-IT')}`, textStyle(28, '#ffd23f')).setOrigin(0, 0.5);
-    const dist = this.add.text(PANEL_W / 2 - 60, 222, `${r.meters.toLocaleString('it-IT')} m`, textStyle(28, '#c9b8ff')).setOrigin(1, 0.5);
+    const best = this.add.text(-PANEL_W / 2 + 60, 222, `${t('record')}  ${fmt(r.best)}`, textStyle(28, '#ffd23f')).setOrigin(0, 0.5);
+    const dist = this.add.text(PANEL_W / 2 - 60, 222, `${fmt(r.meters)} m`, textStyle(28, '#c9b8ff')).setOrigin(1, 0.5);
 
     const coinIcon = this.add.image(-120, 278, 'coin').setScale(0.8);
     const coinText = this.add.text(-96, 278, `+${r.coins}`, textStyle(32, '#ffd23f')).setOrigin(0, 0.5);
@@ -67,8 +68,8 @@ export class GameOverScene extends Phaser.Scene {
     const rowY = canContinue ? 476 : 370;
     if (canContinue) {
       this.continueButton = new Button(this, 0, 362, {
-        label: 'CONTINUA',
-        sublabel: 'Guarda un video',
+        label: t('continue'),
+        sublabel: t('watchVideo'),
         icon: 'icon_video',
         width: 460,
         height: 104,
@@ -83,8 +84,8 @@ export class GameOverScene extends Phaser.Scene {
       this.time.addEvent({ delay: 500, loop: true, callback: () => this._refreshContinue() });
     }
 
-    this.retryButton = new Button(this, -150, rowY, { label: 'RIGIOCA', icon: 'icon_retry', width: 280, height: 92, fontSize: 36, color: COLORS.pink, onClick: () => this.finish('Game') });
-    this.menuButton = new Button(this, 150, rowY, { label: 'MENU', icon: 'icon_home', width: 280, height: 92, fontSize: 36, color: COLORS.purple, onClick: () => this.finish('Menu') });
+    this.retryButton = new Button(this, -150, rowY, { label: t('retry'), icon: 'icon_retry', width: 280, height: 92, fontSize: 36, color: COLORS.pink, onClick: () => this.finish('Game') });
+    this.menuButton = new Button(this, 150, rowY, { label: t('menu'), icon: 'icon_home', width: 280, height: 92, fontSize: 36, color: COLORS.purple, onClick: () => this.finish('Menu') });
     this.panel.add([this.retryButton, this.menuButton]);
 
     this.toast = this.add.text(0, 0, '', textStyle(26, '#ffffff', { backgroundColor: '#140934cc', padding: { x: 18, y: 10 } })).setOrigin(0.5).setAlpha(0).setDepth(10);
@@ -96,7 +97,7 @@ export class GameOverScene extends Phaser.Scene {
       v: r.score,
       duration: Math.min(1200, 300 + r.score),
       ease: 'Cubic.easeOut',
-      onUpdate: () => this.scoreText.setText(Math.round(counter.v).toLocaleString('it-IT')),
+      onUpdate: () => this.scoreText.setText(fmt(Math.round(counter.v))),
     });
     if (r.isNewBest) {
       services.sfx.play('newBest');
@@ -121,8 +122,8 @@ export class GameOverScene extends Phaser.Scene {
   _refreshContinue() {
     const b = this.continueButton;
     if (!b || this.busy || !b.active) return;
-    if (services.ads.isRewardedReady()) b.setEnabled(true).setLabel('CONTINUA', 'Guarda un video');
-    else b.setEnabled(false).setLabel('CONTINUA', 'Caricamento video...');
+    if (services.ads.isRewardedReady()) b.setEnabled(true).setLabel(t('continue'), t('watchVideo'));
+    else b.setEnabled(false).setLabel(t('continue'), t('loadingVideo'));
   }
 
   showToast(text) {
@@ -151,7 +152,7 @@ export class GameOverScene extends Phaser.Scene {
       return;
     }
     this._setBusy(false);
-    this.showToast(result.shown ? 'Guarda il video fino alla fine per continuare' : 'Video non disponibile, riprova tra poco');
+    this.showToast(result.shown ? t('watchToEnd') : t('videoUnavailable'));
   }
 
   /** Ends the run for good: counts the game for the interstitial frequency. */

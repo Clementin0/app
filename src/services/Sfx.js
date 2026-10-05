@@ -46,8 +46,8 @@ const SOUNDS = {
 };
 
 export class Sfx {
-  constructor({ muted = false } = {}) {
-    this.muted = muted;
+  constructor({ enabled = true } = {}) {
+    this.enabled = enabled;
     this.ctx = null;
     this.master = null;
     this.noiseBuffer = null;
@@ -55,6 +55,7 @@ export class Sfx {
 
   /** Must be called from a user gesture at least once. */
   unlock() {
+    const wasReady = !!this.ctx;
     try {
       if (!this.ctx) {
         const Ctx = globalThis.AudioContext ?? globalThis.webkitAudioContext;
@@ -68,6 +69,7 @@ export class Sfx {
     } catch {
       this.ctx = null;
     }
+    if (!wasReady && this.ctx) this.onUnlock?.();
   }
 
   suspend() {
@@ -78,12 +80,12 @@ export class Sfx {
     if (this.ctx?.state === 'suspended') this.ctx.resume().catch(() => {});
   }
 
-  setMuted(muted) {
-    this.muted = !!muted;
+  setEnabled(enabled) {
+    this.enabled = !!enabled;
   }
 
   play(name) {
-    if (this.muted || !this.ctx || this.ctx.state !== 'running') return;
+    if (!this.enabled || !this.ctx || this.ctx.state !== 'running') return;
     const parts = SOUNDS[name];
     if (!parts) return;
     try {

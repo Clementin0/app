@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { REVIVE } from '../config/game.config.js';
+import { REVIVE, WORLD } from '../config/game.config.js';
+import { t } from '../i18n.js';
 import { RunnerWorld } from '../logic/RunnerWorld.js';
 import { services } from '../services/services.js';
 import { Background } from '../ui/Background.js';
@@ -45,13 +46,16 @@ export class GameScene extends Phaser.Scene {
 
     this.bg = new Background(this);
     this.world = new RunnerWorld({ width: this.scale.width, height: this.scale.height, best: save.highScore });
-    this.view = new WorldRenderer(this, this.world);
+    const snap = save.snapshot();
+    this.view = new WorldRenderer(this, this.world, { skin: snap.selectedSkin, recordPx: snap.bestDistance * WORLD.pixelsPerMeter });
+    services.music.start(1);
+    services.music.duck(false);
     this.hud = new Hud(this, { onPause: () => this.pauseGame() });
 
-    this.showTutorial = save.snapshot().gamesPlayed < 3;
+    this.showTutorial = snap.gamesPlayed < 3;
     this.hud.showHint(this.showTutorial);
     if (this.showTutorial) this.time.delayedCall(7000, () => this.hud.showHint(false));
-    this.hud.showMessage('VIA!', COLORS.cyan, 600);
+    this.hud.showMessage(t('go'), COLORS.cyan, 600);
 
     this._bindInput();
     // Scene events persist across restarts: detach on shutdown to avoid duplicates.
@@ -100,13 +104,17 @@ export class GameScene extends Phaser.Scene {
     this._cancelCountdown();
     this.phase = 'paused';
     this.world.releaseJump();
+    services.music.duck(true);
     this.scene.launch('Pause');
     this.scene.pause();
   }
 
   _onResume() {
     // Back from the pause menu: give the player a moment before running again.
-    if (this.phase === 'paused') this.startCountdown(REVIVE.countdown);
+    if (this.phase === 'paused') {
+      services.music.duck(false);
+      this.startCountdown(REVIVE.countdown);
+    }
   }
 
   startCountdown(seconds) {
@@ -119,7 +127,7 @@ export class GameScene extends Phaser.Scene {
         services.sfx.play('tick');
         n -= 1;
       } else {
-        this.hud.showMessage('VIA!', COLORS.cyan, 500, 90);
+        this.hud.showMessage(t('go'), COLORS.cyan, 500, 90);
         services.sfx.play('go');
         this.phase = 'running';
         this._cancelCountdown();
@@ -154,6 +162,7 @@ export class GameScene extends Phaser.Scene {
   showGameOver() {
     if (this.phase === 'over') return;
     this.phase = 'over';
+    services.music.duck(true);
     const summary = this.commitProgress();
     this.scene.launch('GameOver', {
       ...summary,
@@ -170,6 +179,8 @@ export class GameScene extends Phaser.Scene {
     this.scene.resume();
     this.view.handleEvents(this.world.drainEvents());
     services.sfx.play('revive');
+    services.music.duck(false);
+    services.haptics.success();
     this.startCountdown(REVIVE.countdown);
     return true;
   }
@@ -193,10 +204,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   _onWorldEvent(e) {
-    const { sfx } = services;
+    const { sfx, haptics } = services;
     const sound = SFX_FOR_EVENT[e.type];
     if (sound) sfx.play(sound);
     switch (e.type) {
+      case 'shield':
+      case 'magnet':
+        haptics.light();
+        break;
+      case 'shieldBreak':
+        haptics.medium();
+        break;
       case 'land':
         if (e.impact > 700) sfx.play('land');
         break;
@@ -208,13 +226,14 @@ export class GameScene extends Phaser.Scene {
         break;
       case 'levelUp':
         sfx.play('levelUp');
-        this.hud.showMessage('VELOCITÀ +', COLORS.yellow, 900, 58);
+        this.hud.showMessage(t('speedUp'), COLORS.yellow, 900, 58);
         break;
       case 'newBest':
         sfx.play('newBest');
-        this.hud.showMessage('NUOVO RECORD!', COLORS.green, 1200, 58);
+        this.hud.showMessage(t('newRecord'), COLORS.green, 1200, 58);
         break;
       case 'death':
+        haptics.heavy();
         this._onDeath();
         break;
       default:

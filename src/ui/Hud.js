@@ -1,3 +1,4 @@
+import { fmt, t } from '../i18n.js';
 import { IconButton } from './Button.js';
 import { COLORS, glow, hex, textStyle } from './theme.js';
 
@@ -28,7 +29,7 @@ export class Hud {
 
     this.message = scene.add.text(0, 0, '', textStyle(64)).setOrigin(0.5).setDepth(DEPTH + 3).setAlpha(0);
     this.hint = scene.add
-      .text(0, 0, 'TOCCA per saltare  •  TIENI PREMUTO per saltare più in alto  •  TOCCA in aria per il DOPPIO SALTO', textStyle(24, '#ffffff', { align: 'center', wordWrap: { width: 1100 } }))
+      .text(0, 0, t('hint'), textStyle(24, '#ffffff', { align: 'center', wordWrap: { width: 1100 } }))
       .setOrigin(0.5)
       .setDepth(DEPTH + 1)
       .setVisible(false);
@@ -70,8 +71,8 @@ export class Hud {
 
   update(state) {
     if (state.score !== this.lastScore) {
-      this.scoreText.setText(state.score.toLocaleString('it-IT'));
-      this.bestText.setText(`RECORD ${state.best.toLocaleString('it-IT')}`);
+      this.scoreText.setText(fmt(state.score));
+      this.bestText.setText(t('recordValue', { n: fmt(state.best) }));
       this.lastScore = state.score;
       const needed = Math.ceil(Math.max(250, this.scoreText.width + 44, this.bestText.width + 44) / 20) * 20;
       if (needed !== this.scorePanelW) this._drawScorePanel(needed);

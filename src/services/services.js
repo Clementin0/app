@@ -1,5 +1,5 @@
 /**
- * Shared singletons (save data, audio, ads), created once in main.js and
+ * Shared singletons (save data, audio, haptics, ads), created once in main.js and
  * read by the scenes.
  */
 export const services = {
@@ -7,6 +7,10 @@ export const services = {
   save: null,
   /** @type {import('./Sfx.js').Sfx} */
   sfx: null,
+  /** @type {import('./Music.js').Music} */
+  music: null,
+  /** @type {import('./Haptics.js').Haptics} */
+  haptics: null,
   /** @type {import('./AdService.js').AdService} */
   ads: null,
 };

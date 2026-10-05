@@ -1,3 +1,4 @@
+import { SKINS, skinTextureKey } from '../config/skins.js';
 import { createRng } from '../logic/rng.js';
 import { SIZES } from '../logic/Spawner.js';
 
@@ -41,21 +42,38 @@ function glowStroke(ctx, color, blur, width) {
 
 // ------------------------------------------------------------- characters
 
-function drawPlayer(scene) {
+/** Runner sprite for one skin (rounded cube with eyes, glossy highlight, glow). */
+function drawRunner(scene, skin) {
   const S = 60;
-  canvasTexture(scene, 'player', S + PAD * 2, S + PAD * 2, (ctx) => {
+  canvasTexture(scene, skinTextureKey(skin.id), S + PAD * 2, S + PAD * 2, (ctx) => {
     const x = PAD;
     const y = PAD;
     roundRect(ctx, x, y, S, S, 16);
     const body = ctx.createLinearGradient(0, y, 0, y + S);
-    body.addColorStop(0, '#5ffbff');
-    body.addColorStop(0.55, '#00c8ff');
-    body.addColorStop(1, '#2a5cff');
+    body.addColorStop(0, skin.body[0]);
+    body.addColorStop(0.55, skin.body[1]);
+    body.addColorStop(1, skin.body[2]);
     ctx.fillStyle = body;
-    ctx.shadowColor = '#00f5ff';
+    ctx.shadowColor = skin.glow;
     ctx.shadowBlur = 14;
     ctx.fill();
     ctx.shadowBlur = 0;
+
+    if (skin.stars) {
+      ctx.save();
+      roundRect(ctx, x, y, S, S, 16);
+      ctx.clip();
+      const rng = createRng(99);
+      for (let i = 0; i < 22; i++) {
+        ctx.beginPath();
+        ctx.arc(x + rng.range(4, S - 4), y + rng.range(4, S - 4), rng.range(0.6, 1.8), 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${rng.range(0.4, 1).toFixed(2)})`;
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    roundRect(ctx, x, y, S, S, 16);
     ctx.lineWidth = 3;
     ctx.strokeStyle = 'rgba(255,255,255,0.85)';
     ctx.stroke();
@@ -88,6 +106,10 @@ function drawPlayer(scene) {
     ctx.lineCap = 'round';
     ctx.stroke();
   });
+}
+
+function drawPlayer(scene) {
+  for (const skin of SKINS) drawRunner(scene, skin);
 
   canvasTexture(scene, 'bubble', 110, 110, (ctx, w, h) => {
     const g = ctx.createRadialGradient(w / 2, h / 2, 20, w / 2, h / 2, 50);
@@ -579,6 +601,63 @@ function drawIcons(scene) {
     ctx.moveTo(22, 32);
     ctx.lineTo(30, 40);
     ctx.lineTo(43, 24);
+    ctx.stroke();
+  });
+  icon('icon_gear', (ctx) => {
+    ctx.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const r = i % 2 === 0 ? 28 : 21;
+      ctx.lineTo(32 + Math.cos(a) * r, 32 + Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(32, 32, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  });
+  icon('icon_shop', (ctx) => {
+    roundRect(ctx, 10, 22, 44, 36, 7);
+    ctx.fill();
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(32, 22, 11, Math.PI, 0);
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(32, 38, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  });
+  icon('icon_back', (ctx) => {
+    ctx.lineWidth = 9;
+    ctx.beginPath();
+    ctx.moveTo(36, 12);
+    ctx.lineTo(16, 32);
+    ctx.lineTo(36, 52);
+    ctx.moveTo(18, 32);
+    ctx.lineTo(54, 32);
+    ctx.stroke();
+  });
+  icon('icon_lock', (ctx) => {
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.arc(32, 26, 12, Math.PI, 0);
+    ctx.lineTo(44, 32);
+    ctx.moveTo(20, 32);
+    ctx.lineTo(20, 26);
+    ctx.stroke();
+    roundRect(ctx, 12, 30, 40, 28, 6);
+    ctx.fill();
+  });
+  icon('icon_check', (ctx) => {
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.moveTo(12, 34);
+    ctx.lineTo(26, 48);
+    ctx.lineTo(52, 18);
     ctx.stroke();
   });
   icon('icon_trophy', (ctx) => {
