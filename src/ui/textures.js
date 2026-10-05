@@ -411,6 +411,124 @@ function drawIcons(scene) {
     ctx.arc(50, 32, 9, 0, Math.PI * 2);
     ctx.fill();
   });
+  // One icon per hat and weapon in the shop (white, tinted per item).
+  const HAT_ICONS = {
+    none: (ctx) => {
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(32, 32, 20, 0, Math.PI * 2);
+      ctx.moveTo(18, 46);
+      ctx.lineTo(46, 18);
+      ctx.stroke();
+    },
+    cap: (ctx) => {
+      ctx.beginPath();
+      ctx.arc(28, 40, 20, Math.PI, 0);
+      ctx.fill();
+      roundRect(ctx, 30, 36, 30, 8, 4);
+      ctx.fill();
+    },
+    antenna: (ctx) => {
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(32, 54);
+      ctx.lineTo(32, 20);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(32, 14, 9, 0, Math.PI * 2);
+      ctx.fill();
+      roundRect(ctx, 20, 50, 24, 8, 4);
+      ctx.fill();
+    },
+    headphones: (ctx) => {
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.arc(32, 36, 20, Math.PI, 0);
+      ctx.stroke();
+      roundRect(ctx, 6, 32, 14, 24, 5);
+      ctx.fill();
+      roundRect(ctx, 44, 32, 14, 24, 5);
+      ctx.fill();
+    },
+    horns: (ctx) => {
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(32 + side * 8, 54);
+        ctx.quadraticCurveTo(32 + side * 30, 44, 32 + side * 22, 8);
+        ctx.quadraticCurveTo(32 + side * 20, 36, 32 + side * 2, 46);
+        ctx.closePath();
+        ctx.fill();
+      }
+    },
+    tophat: (ctx) => {
+      roundRect(ctx, 4, 46, 56, 8, 4);
+      ctx.fill();
+      roundRect(ctx, 16, 10, 32, 38, 4);
+      ctx.fill();
+    },
+    crown: (ctx) => {
+      ctx.beginPath();
+      ctx.moveTo(6, 52);
+      ctx.lineTo(6, 18);
+      ctx.lineTo(19, 34);
+      ctx.lineTo(32, 12);
+      ctx.lineTo(45, 34);
+      ctx.lineTo(58, 18);
+      ctx.lineTo(58, 52);
+      ctx.closePath();
+      ctx.fill();
+    },
+    halo: (ctx) => {
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.ellipse(32, 32, 26, 11, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    },
+  };
+  for (const [id, draw] of Object.entries(HAT_ICONS)) icon(`hat_${id}`, draw);
+
+  const gunBody = (ctx) => {
+    roundRect(ctx, 6, 30, 30, 14, 4);
+    ctx.fill();
+    roundRect(ctx, 10, 38, 11, 20, 3);
+    ctx.fill();
+  };
+  const WEAPON_ICONS = {
+    blaster: (ctx) => {
+      gunBody(ctx);
+      roundRect(ctx, 30, 32, 26, 10, 3);
+      ctx.fill();
+    },
+    twin: (ctx) => {
+      gunBody(ctx);
+      roundRect(ctx, 30, 26, 28, 7, 3);
+      ctx.fill();
+      roundRect(ctx, 30, 40, 28, 7, 3);
+      ctx.fill();
+    },
+    spread: (ctx) => {
+      gunBody(ctx);
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      for (const dy of [-16, 0, 16]) {
+        ctx.moveTo(32, 37);
+        ctx.lineTo(58, 37 + dy);
+      }
+      ctx.stroke();
+    },
+    laser: (ctx) => {
+      gunBody(ctx);
+      roundRect(ctx, 30, 34, 30, 6, 3);
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(14, 18);
+      ctx.lineTo(56, 18);
+      ctx.stroke();
+    },
+  };
+  for (const [id, draw] of Object.entries(WEAPON_ICONS)) icon(`weapon_${id}`, draw);
+
   icon('icon_up', (ctx) => {
     ctx.beginPath();
     ctx.moveTo(32, 6);

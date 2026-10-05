@@ -24,11 +24,13 @@ const TABS = [
   { id: 'upgrades', label: 'tabUpgrades' },
 ];
 
-const ICON_FOR = { hat: 'icon_hat', weapon: 'icon_weapon', trail: 'icon_trail' };
+const iconFor = (category, item) => (category === 'trail' ? 'icon_trail' : `${category}_${item.id}`);
 
 function itemColor(category, item) {
   if (category === 'trail') return item.colors[0];
-  return item.color ?? item.body ?? 0xffffff;
+  const color = item.color ?? item.body ?? 0xffffff;
+  // Very dark items (the top hat) would vanish on the dark card.
+  return Phaser.Display.Color.IntegerToColor(color).v < 0.35 ? 0x8f86d9 : color;
 }
 
 /** One item card in the grid. */
@@ -42,7 +44,7 @@ class ItemCard extends Phaser.GameObjects.Container {
     const icon =
       category === 'skin'
         ? scene.add.image(0, -24, `swatch_${item.id}`).setScale(0.9)
-        : scene.add.image(0, -26, ICON_FOR[category]).setScale(0.85).setTint(itemColor(category, item)).setAlpha(item.id === 'none' ? 0.35 : 1);
+        : scene.add.image(0, -26, iconFor(category, item)).setScale(0.85).setTint(itemColor(category, item)).setAlpha(item.id === 'none' ? 0.6 : 1);
     this.nameText = scene.add.text(0, 30, itemName(item, getLanguage()), textStyle(20)).setOrigin(0.5);
     this.priceIcon = scene.add.image(0, 58, currencyOf(item) === 'gems' ? 'gem' : 'coin').setScale(currencyOf(item) === 'gems' ? 0.45 : 0.55);
     this.status = scene.add.text(0, 58, '', textStyle(20)).setOrigin(0.5);
