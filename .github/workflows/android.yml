@@ -72,6 +72,14 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
+      # Every debug APK must carry the committed debug key, so that a new
+      # build installs over the previous one without losing the saves.
+      - name: Check stable debug signature
+        run: |
+          BT=$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)
+          "$ANDROID_HOME/build-tools/$BT/apksigner" verify --print-certs android/app/build/outputs/apk/debug/*.apk | tee certs.txt
+          grep -q "CN=Neon Dash Debug" certs.txt
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
