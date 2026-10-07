@@ -1,6 +1,7 @@
 import { CATALOG, currencyOf, DEFAULT_EQUIPPED, FREE_COINS, getItem } from '../config/cosmetics.js';
 import { getUpgrade, nextCost, UPGRADES } from '../config/upgrades.js';
 import { emptyMissionsState } from '../logic3d/Missions.js';
+import { dailyStatus, dayNumber, emptyDailyState } from './DailyReward.js';
 
 /**
  * Persistent progress stored in LocalStorage (inside the Capacitor WebView
@@ -25,12 +26,15 @@ function defaults() {
     vibration: true,
     lang: null, // null = follow the device language
     quality: 'medium',
+    qualityAuto: true, // lowered automatically on slow devices until the player picks a level
     owned: { skin: ['neon'], hat: ['none'], weapon: ['blaster'], trail: ['neon'] },
     equipped: { ...DEFAULT_EQUIPPED },
     upgrades: Object.fromEntries(UPGRADES.map((u) => [u.id, 0])),
     missions: emptyMissionsState(),
     lifetime: { kills: 0, bosses: 0, runs: 0 },
     lastFreeCoinsAt: 0,
+    tutorialDone: false,
+    daily: emptyDailyState(),
   };
 }
 
@@ -105,6 +109,7 @@ export class SaveData {
       vibration: toBool(p.vibration, true),
       lang: typeof p.lang === 'string' ? p.lang : null,
       quality: QUALITIES.includes(p.quality) ? p.quality : d.quality,
+      qualityAuto: toBool(p.qualityAuto, true),
       owned,
       equipped,
       upgrades,
@@ -114,6 +119,9 @@ export class SaveData {
       },
       lifetime: { kills: toCount(p.lifetime?.kills), bosses: toCount(p.lifetime?.bosses), runs: toCount(p.lifetime?.runs) },
       lastFreeCoinsAt: toCount(p.lastFreeCoinsAt),
+      // Players of earlier versions already know the controls.
+      tutorialDone: toBool(p.tutorialDone, toCount(p.gamesPlayed) > 0),
+      daily: { lastDay: Number.isInteger(p.daily?.lastDay) ? p.daily.lastDay : -1, streak: toCount(p.daily?.streak) },
     };
   }
 
@@ -173,11 +181,46 @@ export class SaveData {
     if (key === 'quality') {
       if (!QUALITIES.includes(value)) throw new Error(`Unknown quality ${value}`);
       this.data.quality = value;
+      this.data.qualityAuto = false; // the player's choice wins from now on
     } else if (['music', 'sfx', 'vibration'].includes(key)) {
       this.data[key] = !!value;
     } else {
       throw new Error(`Unknown setting ${key}`);
     }
+    this.persist();
+  }
+
+  /** Quality picked by the adaptive governor (keeps it in automatic mode). */
+  setAutoQuality(value) {
+    if (!QUALITIES.includes(value)) throw new Error(`Unknown quality ${value}`);
+    this.data.quality = value;
+    this.persist();
+  }
+
+  // -------------------------------------------------------- daily reward
+
+  dailyStatus() {
+    return dailyStatus(this.data.daily, this.now());
+  }
+
+  /**
+   * Claims today's reward (x `multiplier`, e.g. 2 after a rewarded video).
+   * Returns the amount granted, or null if already claimed today.
+   */
+  claimDaily(multiplier = 1) {
+    const status = this.dailyStatus();
+    if (!status.available) return null;
+    const m = multiplier === 2 ? 2 : 1;
+    const granted = { coins: status.reward.coins * m, gems: status.reward.gems * m, day: status.day };
+    this.data.daily = { lastDay: dayNumber(this.now()), streak: status.streak };
+    this.data.totalCoins += granted.coins;
+    this.data.totalGems += granted.gems;
+    this.persist();
+    return granted;
+  }
+
+  completeTutorial() {
+    this.data.tutorialDone = true;
     this.persist();
   }
 
@@ -254,7 +297,9 @@ export class SaveData {
 
   /** Milliseconds until the shop's free-coins video can be watched again. */
   freeCoinsCooldownLeft() {
-    return Math.max(0, this.data.lastFreeCoinsAt + FREE_COINS.cooldownMs - this.now());
+    // A claim "in the future" (clock moved back) must not lock the video for long.
+    const last = Math.min(this.data.lastFreeCoinsAt, this.now());
+    return Math.max(0, last + FREE_COINS.cooldownMs - this.now());
   }
 
   claimFreeCoins() {

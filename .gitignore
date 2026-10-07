@@ -20,4 +20,5 @@ android/app/release/
 *.apk
 *.aab
 *.keystore
+!android/debug.keystore
 *.jks

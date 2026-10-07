@@ -1,6 +1,6 @@
 import { laneX } from '../config/game3d.config.js';
 
-const TARGETS = new Set(['walker', 'crate', 'drone']);
+const TARGETS = new Set(['walker', 'crate', 'drone', 'mine']);
 
 /**
  * Bot that plays a LaneWorld: picks the safest lane, jumps barriers,
@@ -47,7 +47,8 @@ export class Autopilot3D {
           score -= 12;
           break;
         case 'walker':
-        case 'crate': {
+        case 'crate':
+        case 'mine': {
           const arrive = d / (w.speed + (e.type === 'walker' ? 4 : 0));
           // Hunt what can be shot down in time (points + loot); otherwise it
           // costs a heart, which is still far better than a wall.
@@ -117,7 +118,8 @@ export class Autopilot3D {
     }
     if (nearest) {
       const { e, front } = nearest;
-      if (e.type === 'barrier' && p.grounded && front < w.speed * 0.15 + 0.4) w.jump();
+      // Barriers, and mines that survived the shots, are jumped.
+      if ((e.type === 'barrier' || e.type === 'mine') && p.grounded && front < w.speed * 0.15 + 0.4) w.jump();
       else if (e.type === 'beam' && front < w.speed * 0.2 + 0.6) w.slide();
       else if (e.type === 'platform' && p.y < e.y + e.h - 0.2 && p.grounded && front < w.speed * 0.17 + 0.5 && front > 0) w.jump();
     }

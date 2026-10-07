@@ -1,10 +1,13 @@
 import Phaser from 'phaser';
+import { bossKind } from '../config/game3d.config.js';
 import { zoneTheme } from '../config/zones.js';
 import { loadoutFrom } from '../config/upgrades.js';
 import { t } from '../i18n.js';
 import { createRng } from '../logic/rng.js';
 import { LaneWorld } from '../logic3d/LaneWorld.js';
 import { Missions } from '../logic3d/Missions.js';
+import { Tutorial } from '../logic3d/Tutorial.js';
+import { AutoQuality, lowerQuality } from '../services/AutoQuality.js';
 import { services } from '../services/services.js';
 import { GameView } from '../three/GameView.js';
 import { Hud } from '../ui/Hud.js';
@@ -33,6 +36,8 @@ const SFX_FOR_EVENT = {
   death: 'death',
   bossSpawn: 'alarm',
   bossDefeated: 'newBest',
+  bossDrop: 'enemyShot',
+  bossSummon: 'alarm',
   zone: 'levelUp',
 };
 
@@ -49,7 +54,9 @@ export class GameScene extends Phaser.Scene {
   init() {
     this.countdownTimer = null;
     this.gestures = new Map();
-    this.tutorialMoves = 0;
+    this.autoQuality = new AutoQuality();
+    this.slowMo = 0;
+    this.popupPoint = { x: 0, y: 0, visible: false };
   }
 
   create() {
@@ -65,17 +72,17 @@ export class GameScene extends Phaser.Scene {
 
     this.world = new LaneWorld({ rng: createRng(Date.now() >>> 0), best: save.highScore, loadout: loadoutFrom(snap) });
     this.view = stage.setView(new GameView(stage, this.world, { equipped: snap.equipped }));
-    this.hud = new Hud(this, { onPause: () => this.pauseGame() });
+    this.hud = new Hud(this, { onPause: () => this.pauseGame(), onSkipTutorial: () => this.tutorial?.finish() });
 
     music.setZone(0);
     music.start(1);
     music.setIntensity(1);
     music.duck(false);
 
-    this.showTutorial = snap.gamesPlayed < 3;
-    this.hud.showHint(this.showTutorial);
-    if (this.showTutorial) this.time.delayedCall(9000, () => this.hud.showHint(false));
-    this.hud.showMessage(t('zone', { n: 1 }), zoneTheme(0).line, 1300, 56, t(zoneTheme(0).nameKey));
+    // First run: an interactive tutorial before the real thing.
+    this.tutorial = snap.tutorialDone ? null : new Tutorial(this.world);
+    this.hud.showSkip(!!this.tutorial);
+    if (!this.tutorial) this._showZoneTitle(0, 0);
 
     this._bindInput();
     const onResume = () => this._onResume();
@@ -141,7 +148,6 @@ export class GameScene extends Phaser.Scene {
     else if (dir === 'right') this.world.moveRight();
     else if (dir === 'up') this.world.jump();
     else this.world.slide();
-    this._tutorialProgress();
     return true;
   }
 
@@ -152,13 +158,6 @@ export class GameScene extends Phaser.Scene {
         g.holding = true;
         this.world.setFiring(true);
       }
-    }
-  }
-
-  _tutorialProgress() {
-    if (this.showTutorial && ++this.tutorialMoves >= 4) {
-      this.showTutorial = false;
-      this.hud.showHint(false);
     }
   }
 
@@ -258,7 +257,7 @@ export class GameScene extends Phaser.Scene {
     this.phase = 'dying';
     this._freeze(false);
     this.world.setFiring(false);
-    this.hud.showHint(false);
+    this.hud.showPrompt(null);
     this.time.delayedCall(1100, () => this.showGameOver());
   }
 
@@ -301,11 +300,64 @@ export class GameScene extends Phaser.Scene {
   update(_time, delta) {
     const dt = Math.min(delta / 1000, 0.05);
     this._updateHolds();
-    if (this.phase === 'running') this.world.step(dt);
+    if (this.phase === 'running') {
+      let scale = this.tutorial ? this.tutorial.update(dt) : 1;
+      // Brief slow motion for dramatic moments (boss down).
+      if (this.slowMo > 0) {
+        this.slowMo = Math.max(0, this.slowMo - dt);
+        scale *= 0.35;
+      }
+      this.world.step(dt * scale);
+      this._adaptQuality(delta / 1000);
+    }
 
     const events = this.view.handleEvents(this.world.drainEvents());
-    for (const e of events) this._onWorldEvent(e);
+    for (const e of events) {
+      this.tutorial?.onEvent(e);
+      this._onWorldEvent(e);
+    }
+    if (this.tutorial) this._updateTutorial();
     this.hud.update(this.world.hud());
+  }
+
+  _showZoneTitle(index, delay) {
+    const theme = zoneTheme(index);
+    this.time.delayedCall(delay, () => this.hud.showMessage(t('zone', { n: index + 1 }), theme.line, 1500, 56, t(theme.nameKey)));
+  }
+
+  _updateTutorial() {
+    const tut = this.tutorial;
+    const { sfx, haptics } = services;
+    for (const e of tut.drainEvents()) {
+      if (e.type === 'tutorialStep') {
+        sfx.play('powerup');
+        haptics.light();
+        this.hud.showMessage(t('tutNice'), COLORS.green, 500, 54);
+      } else if (e.type === 'tutorialRetry') {
+        this.hud.showMessage(t('tutRetry'), COLORS.yellow, 1800, 34);
+      } else if (e.type === 'tutorialDone') {
+        sfx.play('newBest');
+        this.hud.showMessage(t('tutDone'), COLORS.cyan, 1300, 50);
+      }
+    }
+    this.hud.showPrompt(tut.hint);
+    if (tut.finished) {
+      this.tutorial = null;
+      services.save.completeTutorial();
+      this.hud.showPrompt(null);
+      this.hud.showSkip(false);
+      this._showZoneTitle(0, 600);
+    }
+  }
+
+  /** Steps the graphics down when the device can't keep a smooth frame rate. */
+  _adaptQuality(frameTime) {
+    const { save, stage } = services;
+    if (!save.data.qualityAuto || !this.autoQuality.sample(frameTime)) return;
+    const lower = lowerQuality(stage.qualityName);
+    if (!lower) return;
+    stage.setQuality(lower);
+    save.setAutoQuality(lower);
   }
 
   _onWorldEvent(e) {
@@ -313,9 +365,12 @@ export class GameScene extends Phaser.Scene {
     const sound = SFX_FOR_EVENT[e.type];
     if (sound) sfx.play(sound);
     switch (e.type) {
-      case 'kill':
+      case 'kill': {
         haptics.light();
+        const pt = this.view.screenPoint(e.x, e.y + 0.6, e.z, this.popupPoint);
+        if (pt.visible) this.hud.popup(pt.x, pt.y, e.combo >= 2 ? `+${e.points} ×${e.combo}` : `+${e.points}`, e.combo >= 2 ? '#ffb347' : '#ffd23f', e.combo >= 2 ? 34 : 28);
         break;
+      }
       case 'hurt':
       case 'smash':
       case 'shieldBreak':
@@ -334,9 +389,10 @@ export class GameScene extends Phaser.Scene {
       case 'bossSpawn':
         music.setIntensity(2);
         haptics.heavy();
-        this.hud.showMessage(t('bossIncoming'), COLORS.pink, 1600, 60);
+        this.hud.showMessage(t('bossIncoming'), COLORS.pink, 1800, 60, t(bossKind(e.zone).nameKey));
         break;
       case 'bossDefeated':
+        this.slowMo = 0.9;
         music.setIntensity(1);
         haptics.success();
         this.hud.showMessage(t('bossDefeated'), COLORS.green, 1600, 60, `+${e.coins}  +${e.gems}`);
@@ -345,13 +401,11 @@ export class GameScene extends Phaser.Scene {
         music.setIntensity(1);
         this.hud.showMessage(t('bossFled'), COLORS.purple, 1300, 46);
         break;
-      case 'zone': {
-        const theme = zoneTheme(e.index);
+      case 'zone':
         music.setZone(e.index);
         this.cameras.main.flash(400, 255, 255, 255);
-        this.time.delayedCall(1700, () => this.hud.showMessage(t('zone', { n: e.index + 1 }), theme.line, 1500, 56, t(theme.nameKey)));
+        this._showZoneTitle(e.index, 1700);
         break;
-      }
       case 'newBest':
         sfx.play('newBest');
         this.hud.showMessage(t('newRecord'), COLORS.green, 1200, 54);

@@ -84,6 +84,11 @@ const admobConfig = Object.freeze({
 
   /** Safety timeout: a full-screen ad that never reports back is treated as closed. */
   fullscreenTimeoutMs: 90_000,
+  /**
+   * Once the ad reported it is on screen, wait much longer: the player may
+   * leave the app mid-video (a call) and still finish it for the reward.
+   */
+  fullscreenShownTimeoutMs: 20 * 60_000,
   /** Delay before retrying a failed ad load. */
   retryLoadDelayMs: 15_000,
 

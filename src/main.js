@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { detectLanguage, setLanguage, t } from './i18n.js';
 import { BootScene } from './scenes/BootScene.js';
+import { DailyScene } from './scenes/DailyScene.js';
 import { GameOverScene } from './scenes/GameOverScene.js';
 import { GameScene } from './scenes/GameScene.js';
 import { MenuScene } from './scenes/MenuScene.js';
@@ -62,7 +63,7 @@ const game = new Phaser.Game({
   fps: { smoothStep: !e2e },
   disableContextMenu: true,
   banner: false,
-  scene: [BootScene, MenuScene, ShopScene, GameScene, PauseScene, GameOverScene, SettingsScene],
+  scene: [BootScene, MenuScene, ShopScene, GameScene, PauseScene, GameOverScene, SettingsScene, DailyScene],
 });
 
 // One 3D frame per Phaser frame, after the scenes updated the world.
@@ -70,7 +71,7 @@ game.events.on('poststep', (_time, delta) => services.stage.frame(delta / 1000))
 
 /** The top-most active scene handles the Android back button. */
 function topScene() {
-  for (const key of ['Settings', 'GameOver', 'Pause', 'Shop', 'Game', 'Menu']) {
+  for (const key of ['Daily', 'Settings', 'GameOver', 'Pause', 'Shop', 'Game', 'Menu']) {
     const scene = game.scene.getScene(key);
     if (scene?.sys.isActive()) return scene;
   }

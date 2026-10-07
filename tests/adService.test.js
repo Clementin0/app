@@ -313,6 +313,19 @@ describe('AdService - rewarded "second chance"', () => {
     expect(ads.isFullscreenShowing).toBe(false);
   });
 
+  it('keeps waiting for an ad that is on screen (player left the app mid-video)', async () => {
+    vi.useFakeTimers();
+    const { ads, plugin } = await makeServiceWithFakeTimers({ rewarded: 'hang' });
+    const pending = ads.showRewarded();
+    await vi.advanceTimersByTimeAsync(10);
+    plugin.emit(RewardEvents.Showed);
+    await vi.advanceTimersByTimeAsync(admobConfig.fullscreenTimeoutMs * 3);
+    expect(ads.isFullscreenShowing).toBe(true);
+    plugin.emit(RewardEvents.Rewarded, { type: 'revive', amount: 1 });
+    plugin.emit(RewardEvents.Dismissed);
+    await expect(pending).resolves.toEqual({ shown: true, rewarded: true });
+  });
+
   it('refuses a second full-screen ad while one is showing', async () => {
     vi.useFakeTimers();
     const { ads } = await makeServiceWithFakeTimers({ rewarded: 'hang' });

@@ -1,6 +1,7 @@
+import { BOSS_KINDS } from '../config/game3d.config.js';
 import { zoneTheme } from '../config/zones.js';
 import { fmt, t } from '../i18n.js';
-import { IconButton } from './Button.js';
+import { Button, IconButton } from './Button.js';
 import { COLORS, glow, hex, textStyle } from './theme.js';
 
 const DEPTH = 100;
@@ -16,7 +17,7 @@ const POWERUPS = [
  * gems, power-up timers, combo, boss health, zone banner, pause button.
  */
 export class Hud {
-  constructor(scene, { onPause }) {
+  constructor(scene, { onPause, onSkipTutorial }) {
     this.scene = scene;
     this.lastScore = -1;
     this.lastHp = -1;
@@ -51,8 +52,32 @@ export class Hud {
 
     this.message = scene.add.text(0, 0, '', textStyle(64)).setOrigin(0.5).setDepth(DEPTH + 3).setAlpha(0);
     this.subMessage = scene.add.text(0, 0, '', textStyle(30, '#e9ddff')).setOrigin(0.5).setDepth(DEPTH + 3).setAlpha(0);
-    this.hint = scene.add.text(0, 0, t('hintControls'), textStyle(22, '#ffffff', { align: 'center', wordWrap: { width: 1100 } })).setOrigin(0.5).setDepth(DEPTH + 1).setVisible(false);
+    // Tutorial prompt: gesture text + animated arrow, and a skip button.
+    this.prompt = scene.add.container(0, 0).setDepth(DEPTH + 3).setVisible(false);
+    this.promptBg = scene.add.graphics();
+    this.promptText = glow(scene.add.text(0, 0, '', textStyle(38)).setOrigin(0.5), COLORS.cyan, 18);
+    this.promptArrow = glow(scene.add.text(0, 92, '', textStyle(96, '#7ffcff')).setOrigin(0.5), COLORS.cyan, 24);
+    this.promptRing = scene.add.circle(0, 92, 34).setStrokeStyle(8, COLORS.cyan).setFillStyle(COLORS.cyan, 0.25);
+    this.prompt.add([this.promptBg, this.promptRing, this.promptArrow, this.promptText]);
+    this.promptId = null;
+    this.skipButton = new Button(scene, 0, 0, { label: t('tutSkip'), width: 220, height: 52, fontSize: 19, color: COLORS.panelEdge, onClick: () => onSkipTutorial?.() });
+    this.skipButton.setDepth(DEPTH + 2).setVisible(false);
     this.vignette = scene.add.image(0, 0, 'vignette').setOrigin(0).setDepth(DEPTH - 1).setAlpha(0);
+    // Reused "+points" popups over killed enemies.
+    this.popups = Array.from({ length: 8 }, () => scene.add.text(0, 0, '', textStyle(30, '#ffd23f')).setOrigin(0.5).setDepth(DEPTH - 1).setVisible(false));
+    this.nextPopup = 0;
+  }
+
+  /** Floating points at a normalized screen position (0..1). */
+  popup(nx, ny, text, color = '#ffd23f', size = 30) {
+    const p = this.popups[this.nextPopup];
+    this.nextPopup = (this.nextPopup + 1) % this.popups.length;
+    const x = nx * this.width;
+    const y = ny * this.height;
+    this.scene.tweens.killTweensOf(p);
+    p.setText(text).setColor(color).setFontSize(size).setPosition(x, y).setAlpha(1).setScale(0.6).setVisible(true);
+    this.scene.tweens.add({ targets: p, scale: 1, duration: 140, ease: 'Back.easeOut' });
+    this.scene.tweens.add({ targets: p, y: y - 70, alpha: 0, delay: 250, duration: 550, onComplete: () => p.setVisible(false) });
   }
 
   layout(width, height) {
@@ -79,7 +104,9 @@ export class Hud {
     this.pauseButton.setPosition(width - m - 38, m + 38);
     this.message.setPosition(width / 2, height * 0.32);
     this.subMessage.setPosition(width / 2, height * 0.32 + 62);
-    this.hint.setPosition(width / 2, height - 46).setWordWrapWidth(width - 80);
+    // Above the obstacles and the runner, under the wallet.
+    this.prompt.setPosition(width / 2, Math.max(150, height * 0.27));
+    this.skipButton.setPosition(width - m - 110, m + 112);
     this.vignette.setDisplaySize(width, height);
     this.bossRect = { x: width / 2 - 260, y: m + 104, w: 520 };
     this.bossLabel.setPosition(width / 2, m + 96);
@@ -153,6 +180,7 @@ export class Hud {
     if (state.combo >= 2 && state.combo !== this.lastCombo) {
       this.combo.setText(t('combo', { n: state.combo })).setAlpha(1);
       this.scene.tweens.killTweensOf(this.combo);
+      this.combo.fading = false; // a killed fade never runs its onComplete
       this.combo.setScale(1.4);
       this.scene.tweens.add({ targets: this.combo, scale: 1, duration: 200, ease: 'Back.easeOut' });
     }
@@ -165,11 +193,18 @@ export class Hud {
     // Boss health.
     this.bossPanel.clear();
     this.bossLabel.setVisible(!!state.boss);
+    if (state.boss && state.boss.kind !== this.bossKind) {
+      this.bossKind = state.boss.kind;
+      const kind = BOSS_KINDS.find((k) => k.id === state.boss.kind);
+      this.bossLabel.setText(kind ? t(kind.nameKey) : 'BOSS');
+      this.bossColor = kind?.ring ?? COLORS.pink;
+      this.bossLabel.setColor(hex(this.bossColor));
+    }
     if (state.boss) {
       const b = this.bossRect;
       const ratio = state.boss.hp / state.boss.maxHp;
       this.bossPanel.fillStyle(COLORS.ink, 0.75).fillRoundedRect(b.x, b.y, b.w, 18, 9);
-      this.bossPanel.fillStyle(COLORS.pink, 1).fillRoundedRect(b.x + 2, b.y + 2, Math.max(8, (b.w - 4) * ratio), 14, 7);
+      this.bossPanel.fillStyle(this.bossColor ?? COLORS.pink, 1).fillRoundedRect(b.x + 2, b.y + 2, Math.max(8, (b.w - 4) * ratio), 14, 7);
       this.bossPanel.lineStyle(2, COLORS.white, 0.6).strokeRoundedRect(b.x, b.y, b.w, 18, 9);
     }
   }
@@ -180,8 +215,11 @@ export class Hud {
     this.scene.tweens.add({ targets: this.vignette, alpha: 0, duration: 450 });
   }
 
+  /** Pops an icon; overlapping bumps (a line of coins) restart from its base scale. */
   bump(target) {
-    this.scene.tweens.add({ targets: target, scale: { from: target.scale * 1.35, to: target.scale }, duration: 180, ease: 'Back.easeOut' });
+    target.baseScale ??= target.scale;
+    this.scene.tweens.killTweensOf(target);
+    this.scene.tweens.add({ targets: target, scale: { from: target.baseScale * 1.35, to: target.baseScale }, duration: 180, ease: 'Back.easeOut' });
   }
 
   showMessage(text, color = COLORS.pink, duration = 1100, size = 64, sub = '') {
@@ -194,9 +232,35 @@ export class Hud {
     this.scene.tweens.add({ targets: [m, this.subMessage], alpha: 0, delay: duration, duration: 300 });
   }
 
-  showHint(visible) {
-    this.hint.setVisible(visible).setAlpha(visible ? 1 : 0);
-    if (visible) this.scene.tweens.add({ targets: this.hint, alpha: { from: 1, to: 0.5 }, duration: 800, yoyo: true, repeat: -1 });
-    else this.scene.tweens.killTweensOf(this.hint);
+  /** Shows the gesture for a tutorial step ({ id, hint, gesture }), or hides it with null. */
+  showPrompt(step) {
+    const id = step?.id ?? null;
+    if (id === this.promptId) return;
+    this.promptId = id;
+    const tweens = this.scene.tweens;
+    tweens.killTweensOf([this.promptArrow, this.promptRing, this.prompt]);
+    if (!step) {
+      tweens.add({ targets: this.prompt, alpha: 0, duration: 150, onComplete: () => this.prompt.setVisible(false) });
+      return;
+    }
+    this.promptText.setText(t(step.hint));
+    const w = this.promptText.width + 60;
+    this.promptBg.clear();
+    this.promptBg.fillStyle(COLORS.ink, 0.7).fillRoundedRect(-w / 2, -34, w, 68, 22);
+    this.promptBg.lineStyle(3, COLORS.cyan, 0.8).strokeRoundedRect(-w / 2, -34, w, 68, 22);
+    const glyph = { horizontal: '←   →', up: '↑', down: '↓' }[step.gesture] ?? '';
+    this.promptArrow.setText(glyph).setPosition(0, 92).setVisible(!!glyph);
+    this.promptRing.setVisible(step.gesture === 'hold').setScale(1);
+    this.prompt.setVisible(true).setAlpha(0);
+    tweens.add({ targets: this.prompt, alpha: 1, duration: 160 });
+    // The arrow mimics the swipe; the ring pulses like a finger held down.
+    if (step.gesture === 'up') tweens.add({ targets: this.promptArrow, y: 62, duration: 520, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    else if (step.gesture === 'down') tweens.add({ targets: this.promptArrow, y: 122, duration: 520, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    else if (step.gesture === 'horizontal') tweens.add({ targets: this.promptArrow, scaleX: 1.25, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    else tweens.add({ targets: this.promptRing, scale: 1.35, duration: 450, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+  }
+
+  showSkip(visible) {
+    this.skipButton.setVisible(visible);
   }
 }

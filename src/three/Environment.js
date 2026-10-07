@@ -28,6 +28,7 @@ const ROAD_LEN = 320;
 const ROAD_CENTER = 140;
 const TILE = 8; // meters per road texture tile
 const ROAD_HALF = (LANES.count * LANES.width) / 2 + 0.6;
+const MAX_BUILDINGS = 64;
 const BUILDING_SPAN = [-30, 320];
 
 /**
@@ -78,10 +79,13 @@ export class Environment {
 
     // City blocks on both sides.
     this.buildingMat = new MeshLambertMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.55 });
+    // Allocated for the highest quality; `count` decides how many are drawn.
+    const capacity = Math.max(buildings, MAX_BUILDINGS);
     this.count = buildings;
-    this.buildings = new InstancedMesh(new BoxGeometry(1, 1, 1), this.buildingMat, buildings);
+    this.buildings = new InstancedMesh(new BoxGeometry(1, 1, 1), this.buildingMat, capacity);
+    this.buildings.count = buildings;
     this.blocks = [];
-    for (let i = 0; i < buildings; i++) {
+    for (let i = 0; i < capacity; i++) {
       const side = i % 2 ? 1 : -1;
       this.blocks.push({
         x: side * (ROAD_HALF + 9 + Math.random() * 26),
@@ -124,6 +128,13 @@ export class Environment {
       this.buildings.setMatrixAt(i, this.matrix);
     }
     this.buildings.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Number of city blocks drawn (graphics quality). */
+  setBuildingCount(n) {
+    this.count = Math.max(0, Math.min(n, this.blocks.length));
+    this.buildings.count = this.count;
+    this._writeBuildings();
   }
 
   /** Switches palette, textures and lights to the given zone. */

@@ -191,6 +191,17 @@ async function main() {
     await waitFor((h) => window[h].services.ads.initialized, H);
     await waitFor(() => document.querySelector('.mock-banner')?.style.display === 'flex');
     check('Menu: banner ad shown', (await stats()).bannerShows >= 1);
+
+    // Daily reward, offered on the first menu of the day.
+    await sceneActive('Daily');
+    await page.waitForTimeout(500);
+    await shot('01-daily');
+    const coinsDaily = await evaluate((h) => window[h].services.save.snapshot().totalCoins, H);
+    await tapButton('Daily', 'claimButton');
+    step = 'daily claimed';
+    await waitFor((h) => !window[h].activeScenes().includes('Daily'), H, 8000);
+    const daily = await save();
+    check('Daily reward claimed once (+50 coins, day 1)', daily.totalCoins === coinsDaily + 50 && daily.daily.streak === 1, `coins ${coinsDaily} -> ${daily.totalCoins}`);
     // Deterministic missions for this check: one is completed by the first kill.
     await evaluate((h) => {
       const { save } = window[h].services;
@@ -212,14 +223,12 @@ async function main() {
     await newRun();
     await waitFor(() => document.querySelector('.mock-banner')?.style.display === 'none');
     check('Gameplay: banner hidden', (await stats()).bannerHides >= 1);
-    await world((w) => (w.entities = [])); // nothing may block the lane-change checks
-
-    await swipe(-140, 0);
-    await waitWorld((w) => w.player.lane === 0);
-    await swipe(140, 0);
-    await swipe(140, 0);
-    await waitWorld((w) => w.player.lane === 2);
-    check('Swipe left / right changes lane', true);
+    // First run: the interactive tutorial stops time in front of each
+    // obstacle until the right gesture is made.
+    const hint = (id) => {
+      step = `tutorial prompt ${id}`;
+      return waitFor(([h, i]) => window[h].scene('Game').tutorial?.hint?.id === i, [H, id], 40000);
+    };
     // Headless frames are slow: a jump can be over before the swipe returns,
     // so the peak height and the slide are sampled every frame in the page.
     await evaluate((h) => {
@@ -231,13 +240,35 @@ async function main() {
       });
       window.__track = track;
     }, H);
+    check('First run starts the tutorial', await world((w) => w.safe && w.spawnPaused));
+    await hint('lane');
+    step = 'tutorial freeze';
+    await waitFor((h) => window[h].scene('Game').tutorial.timeScale === 0, H, 20000);
+    const frozenAt = await world((w) => w.time);
+    await page.waitForTimeout(600);
+    check('Tutorial: time stops in front of the wall until the player moves', (await world((w) => w.time)) === frozenAt);
+    await shot('02-tutorial');
+    await swipe(-140, 0);
+    await waitWorld((w) => w.player.lane === 0);
+    check('Tutorial: swipe ← changes lane', true);
+    await hint('jump');
     await swipe(0, -140);
     await waitFor(() => window.__track.maxY > 0.5);
-    check('Swipe up jumps', true, `peak ${(await evaluate(() => window.__track.maxY)).toFixed(2)} m`);
-    await waitWorld((w) => w.player.grounded);
+    check('Tutorial: swipe ↑ jumps', true, `peak ${(await evaluate(() => window.__track.maxY)).toFixed(2)} m`);
+    await hint('slide');
     await swipe(0, 140);
     await waitFor(() => window.__track.slid);
-    check('Swipe down slides', (await world((w) => w.stats.slides)) >= 1);
+    check('Tutorial: swipe ↓ slides', (await world((w) => w.stats.slides)) >= 1);
+    await hint('shoot');
+    step = 'tutorial shoot';
+    await holdFire(() => waitFor((h) => window[h].scene('Game').tutorial === null, H, 40000));
+    const tut = await world((w) => ({ kills: w.stats.kills, safe: w.safe, spawning: !w.spawnPaused }));
+    check('Tutorial: hold to shoot down the robot, then the real run starts', tut.kills === 1 && !tut.safe && tut.spawning && (await save()).tutorialDone, JSON.stringify(tut));
+
+    step = 'one swipe, one lane';
+    await swipe(140, 0);
+    await page.waitForTimeout(300);
+    check('A long swipe moves exactly one lane', (await world((w) => w.player.lane)) === 1);
 
     const shots0 = await world((w) => w.stats.shots);
     step = 'tap to shoot';
@@ -247,9 +278,9 @@ async function main() {
 
     step = 'kill an enemy';
     await world((w) => w._addEntity({ type: 'walker', lane: w.player.lane, dz: 0 }, 32));
-    await holdFire(() => waitWorld((w) => w.stats.kills >= 1, null, 20000));
+    await holdFire(() => waitWorld((w) => w.stats.kills >= 2, null, 20000));
     const kill = await world((w) => ({ kills: w.stats.kills, bonus: w.score.bonus }));
-    check('Hold to auto-fire kills an enemy (bonus points)', kill.kills >= 1 && kill.bonus > 0, JSON.stringify(kill));
+    check('Hold to auto-fire kills an enemy (bonus points)', kill.kills >= 2 && kill.bonus > 0, JSON.stringify(kill));
 
     const score1 = await world((w) => w.score.score);
     await page.waitForTimeout(800);
@@ -288,7 +319,7 @@ async function main() {
     let data = await save();
     check('High score saved in LocalStorage', data.highScore > 0, `highScore=${data.highScore}`);
     const jumps = data.missions.active.find((m) => m.id === 'jumps');
-    check('Missions: progress saved, completed mission rewarded', data.missions.completed === 1 && jumps?.progress >= 1 && data.totalCoins >= 25 + boss.coins, `completed=${data.missions.completed} jumps=${jumps?.progress} coins=${data.totalCoins}`);
+    check('Missions: progress saved, completed mission rewarded', data.missions.completed >= 1 && jumps?.progress >= 1 && data.totalCoins >= 25 + boss.coins, `completed=${data.missions.completed} jumps=${jumps?.progress} coins=${data.totalCoins}`);
     await page.waitForTimeout(1300);
     await shot('06-gameover');
 

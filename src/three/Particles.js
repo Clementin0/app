@@ -42,11 +42,17 @@ export class Particles {
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
       const s = speed * (0.4 + Math.random() * 0.6);
-      this.pos.set([x, y, z], i * 3);
-      this.vel.set([Math.sin(phi) * Math.cos(theta) * s, Math.cos(phi) * s + up, Math.sin(phi) * Math.sin(theta) * s + drift], i * 3);
-      this.tmp.setHex(colors[(Math.random() * colors.length) | 0]);
-      this.base.set([this.tmp.r, this.tmp.g, this.tmp.b], i * 3);
-      this.col.set([this.tmp.r, this.tmp.g, this.tmp.b], i * 3);
+      const k3 = i * 3;
+      this.pos[k3] = x;
+      this.pos[k3 + 1] = y;
+      this.pos[k3 + 2] = z;
+      this.vel[k3] = Math.sin(phi) * Math.cos(theta) * s;
+      this.vel[k3 + 1] = Math.cos(phi) * s + up;
+      this.vel[k3 + 2] = Math.sin(phi) * Math.sin(theta) * s + drift;
+      const c = this.tmp.setHex(colors[(Math.random() * colors.length) | 0]);
+      this.base[k3] = this.col[k3] = c.r;
+      this.base[k3 + 1] = this.col[k3 + 1] = c.g;
+      this.base[k3 + 2] = this.col[k3 + 2] = c.b;
       this.life[i] = this.maxLife[i] = life * (0.6 + Math.random() * 0.4);
     }
   }

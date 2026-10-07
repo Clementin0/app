@@ -1,6 +1,6 @@
 {
   "name": "neon-dash",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Neon Dash - runner sparatutto 3D (Three.js + Phaser 3), confezionato per Android con Capacitor e monetizzato con Google AdMob.",
   "type": "module",

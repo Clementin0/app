@@ -168,6 +168,8 @@ export class AdService {
       add(BannerEvents.Loaded, () => {
         this.banner.failed = false;
       }),
+      add(InterstitialEvents.Showed, () => this._onFullscreenShowed('interstitial')),
+      add(RewardEvents.Showed, () => this._onFullscreenShowed('rewarded')),
       add(InterstitialEvents.Dismissed, () => this._finishFullscreen('interstitial', true)),
       add(InterstitialEvents.FailedToShow, (err) => this._finishFullscreen('interstitial', false, err)),
       add(RewardEvents.Rewarded, () => this._markRewarded()),
@@ -294,6 +296,15 @@ export class AdService {
     const timer = this.timers.setTimeout(() => this._finishFullscreen(kind, false, new Error('timeout')), this.config.fullscreenTimeoutMs);
     this._fullscreen = { kind, resolve, timer, rewarded: false, graceTimer: null };
     this._emit('fullscreenOpen', { kind });
+  }
+
+  /** The ad is on screen: from now on only its Dismissed / FailedToShow events end it. */
+  _onFullscreenShowed(kind) {
+    const f = this._fullscreen;
+    if (!f || f.kind !== kind || f.showed) return;
+    f.showed = true;
+    this.timers.clearTimeout(f.timer);
+    f.timer = this.timers.setTimeout(() => this._finishFullscreen(kind, false, new Error('timeout')), this.config.fullscreenShownTimeoutMs ?? this.config.fullscreenTimeoutMs);
   }
 
   _finishFullscreen(kind, shown, err) {

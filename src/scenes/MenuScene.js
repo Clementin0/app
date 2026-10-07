@@ -71,9 +71,9 @@ export class MenuScene extends Phaser.Scene {
     const trophy = this.add.image(x0, 420, 'icon_trophy').setTint(COLORS.yellow).setScale(0.5);
     const best = this.add.text(x0 + 28, 420, `${t('record')}  ${fmt(s.highScore)}`, textStyle(26, '#ffd23f')).setOrigin(0, 0.5);
     const coin = this.add.image(x0, 482, 'coin').setScale(0.7);
-    const coins = this.add.text(x0 + 28, 482, fmt(s.totalCoins), textStyle(26, '#ffe68a')).setOrigin(0, 0.5);
+    const coins = (this.coinsText = this.add.text(x0 + 28, 482, fmt(s.totalCoins), textStyle(26, '#ffe68a')).setOrigin(0, 0.5));
     const gem = this.add.image(x0, 544, 'gem').setScale(0.55);
-    const gems = this.add.text(x0 + 28, 544, fmt(s.totalGems), textStyle(26, '#9ff6ff')).setOrigin(0, 0.5);
+    const gems = (this.gemsText = this.add.text(x0 + 28, 544, fmt(s.totalGems), textStyle(26, '#9ff6ff')).setOrigin(0, 0.5));
 
     // Missions panel (right).
     const mx = -DESIGN_W / 2 + 350;
@@ -107,6 +107,18 @@ export class MenuScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-ENTER', () => this.startGame());
 
     bindLayout(this, (w, h) => this.layout(w, h));
+
+    // Daily reward: offered once per day, right after the menu appears.
+    if (save.dailyStatus().available) this.time.delayedCall(450, () => !this.starting && !this.scene.isActive('Daily') && this.scene.launch('Daily'));
+  }
+
+  /** Called by overlays (daily reward) after the wallet changed. */
+  refreshWallet() {
+    const s = services.save.snapshot();
+    this.coinsText.setText(fmt(s.totalCoins));
+    this.gemsText.setText(fmt(s.totalGems));
+    this.shopBadge.setVisible(services.save.canAffordSomething());
+    this.tweens.add({ targets: [this.coinsText, this.gemsText], scale: { from: 1.3, to: 1 }, duration: 260, ease: 'Back.easeOut' });
   }
 
   layout(width, height) {
@@ -118,7 +130,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   _leaveTo(target) {
-    if (this.starting) return;
+    if (this.starting || this.scene.isActive('Daily')) return;
     this.starting = true;
     services.sfx.unlock();
     // force=true: a tap during the fade-in must not cancel the transition.
@@ -148,6 +160,8 @@ export class MenuScene extends Phaser.Scene {
   }
 
   handleBack() {
+    // A transition is under way (Play / Shop tapped): do not quit.
+    if (this.starting) return;
     exitApp();
   }
 

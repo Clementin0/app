@@ -82,8 +82,12 @@ export class SettingsScene extends Phaser.Scene {
     });
 
     // Graphics quality: resolution, antialiasing, scenery density, particles.
-    const qLabel = this.add.text(-240, 446, t('quality'), textStyle(28)).setOrigin(0, 0.5);
-    this.panel.add(qLabel);
+    const qLabel = this.add.text(-240, s.qualityAuto ? 436 : 446, t('quality'), textStyle(28)).setOrigin(0, 0.5);
+    // "Automatic" until the player picks a level: slow devices step down by themselves.
+    this.qualityAutoLabel = this.add.text(-240, 466, t('qualityAuto'), textStyle(15, '#7dffb0', { strokeThickness: 3 })).setOrigin(0, 0.5);
+    this.qualityAutoLabel.setVisible(s.qualityAuto);
+    this.qualityLabel = qLabel;
+    this.panel.add([qLabel, this.qualityAutoLabel]);
     this.qualityButtons = {};
     ['low', 'medium', 'high'].forEach((q, i) => {
       const b = new Button(this, 240 - 50 - (2 - i) * 108, 446, {
@@ -123,6 +127,8 @@ export class SettingsScene extends Phaser.Scene {
     const { save, stage } = services;
     save.setSetting('quality', q);
     stage.setQuality(q);
+    this.qualityAutoLabel.setVisible(false);
+    this.qualityLabel.setY(446);
     for (const [key, b] of Object.entries(this.qualityButtons)) b.setColor(key === q ? COLORS.green : 0x2a1d55);
   }
 

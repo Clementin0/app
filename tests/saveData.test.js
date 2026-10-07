@@ -29,6 +29,17 @@ describe('SaveData (LocalStorage)', () => {
     expect(() => save.setSetting('bogus', 1)).toThrow();
   });
 
+  it('keeps graphics in automatic mode until the player picks a level', () => {
+    const storage = new MemoryStorage();
+    const save = new SaveData(storage);
+    expect(save.snapshot()).toMatchObject({ quality: 'medium', qualityAuto: true });
+    save.setAutoQuality('low');
+    expect(new SaveData(storage).snapshot()).toMatchObject({ quality: 'low', qualityAuto: true });
+    save.setSetting('quality', 'high');
+    expect(new SaveData(storage).snapshot()).toMatchObject({ quality: 'high', qualityAuto: false });
+    expect(() => save.setAutoQuality('ultra')).toThrow();
+  });
+
   it('migrates v1.0 and v1.1 saves (mute flag, bought skins)', () => {
     const v11 = { highScore: 50, muted: true, ownedSkins: ['neon', 'lime', 'nope'], selectedSkin: 'lime', totalCoins: 40 };
     const save = new SaveData(new MemoryStorage({ [SAVE_KEY]: JSON.stringify(v11) }));
@@ -102,5 +113,13 @@ describe('SaveData - shop', () => {
     expect(save.claimFreeCoins()).toBe(0);
     now += FREE_COINS.cooldownMs;
     expect(save.claimFreeCoins()).toBe(FREE_COINS.amount);
+  });
+
+  it('a clock moved back does not lock the free coins for longer than one cooldown', () => {
+    let now = 50_000_000;
+    const save = new SaveData(new MemoryStorage(), () => now);
+    save.claimFreeCoins(); // claimed with the clock a day ahead...
+    now -= 86_400_000; // ...then corrected
+    expect(save.freeCoinsCooldownLeft()).toBeLessThanOrEqual(FREE_COINS.cooldownMs);
   });
 });

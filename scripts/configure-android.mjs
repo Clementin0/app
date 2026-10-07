@@ -127,6 +127,27 @@ if (keystorePropertiesFile.exists()) {
   return gradle;
 });
 
+// Debug builds are signed with the committed android/debug.keystore (a
+// throw-away key, like Android Studio's): every CI APK has the same
+// signature, so a new build installs over the old one and keeps the saves.
+patch(join(ANDROID, 'app', 'build.gradle'), (gradle) => {
+  if (gradle.includes('neon-dash: debug signing')) return gradle;
+  return gradle.replace(
+    '    signingConfigs {\n',
+    `    signingConfigs {
+        // neon-dash: debug signing (managed by scripts/configure-android.mjs)
+        if (rootProject.file('debug.keystore').exists()) {
+            debug {
+                storeFile rootProject.file('debug.keystore')
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
+        }
+`,
+  );
+});
+
 const keystoreExample = join(ANDROID, 'keystore.properties.example');
 if (!existsSync(keystoreExample)) {
   writeFileSync(

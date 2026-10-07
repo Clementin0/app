@@ -30,6 +30,9 @@ export class Stage {
 
   _createRenderer() {
     if (this.renderer) {
+      // Without forceContextLoss the old context stays alive (cached
+      // geometries / textures keep listeners pointing at it).
+      this.renderer.forceContextLoss();
       this.renderer.dispose();
       this.renderer.domElement.remove();
     }
@@ -46,6 +49,7 @@ export class Stage {
     this.qualityName = name;
     this.quality = QUALITY[name];
     if (before.antialias !== this.quality.antialias) this._createRenderer();
+    this.environment.setBuildingCount(this.quality.buildings);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.quality.pixelRatio));
     this.resize();
   }

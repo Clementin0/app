@@ -2,10 +2,12 @@ import {
   AdditiveBlending,
   BoxGeometry,
   Color,
+  ConeGeometry,
   CylinderGeometry,
   DoubleSide,
   EdgesGeometry,
   Group,
+  IcosahedronGeometry,
   LineBasicMaterial,
   LineSegments,
   Mesh,
@@ -183,21 +185,23 @@ function drone() {
   return g;
 }
 
-function boss() {
+function boss(kindId = 'mothership') {
   const s = GAME3D.BOSS;
+  const kind = GAME3D.BOSS_KINDS.find((k) => k.id === kindId) ?? GAME3D.BOSS_KINDS[0];
   const g = new Group();
-  const hull = new Mesh(G('bossHull', () => new SphereGeometry(s.w / 2, 32, 16)), lambert(0x2b2347, 0x120a24));
-  hull.scale.set(1, 0.32, 0.7);
+  const hullMat = lambert(kind.hull, 0x120a24);
+  const hull = new Mesh(G('bossHull', () => new SphereGeometry(s.w / 2, 32, 16)), hullMat);
+  hull.scale.set(1, kind.id === 'carrier' ? 0.24 : 0.32, 0.7);
   hull.position.y = s.h * 0.45;
-  const dome = new Mesh(G('bossDome', () => new SphereGeometry(1.1, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2)), basic(0x7ff3ff, { transparent: true, opacity: 0.55 }));
+  const dome = new Mesh(G('bossDome', () => new SphereGeometry(1.1, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2)), basic(kind.dome, { transparent: true, opacity: 0.55 }));
   dome.position.y = s.h * 0.55;
-  const ring = new Mesh(G('bossRing', () => new TorusGeometry(s.w / 2 - 0.1, 0.09, 8, 48)), basic(0xff2bd6));
+  const ring = new Mesh(G('bossRing', () => new TorusGeometry(s.w / 2 - 0.1, 0.09, 8, 48)), basic(kind.ring));
   ring.rotation.x = Math.PI / 2;
   ring.position.y = s.h * 0.45;
   const lights = [];
   for (let i = 0; i < 12; i++) {
     const a = (i / 12) * Math.PI * 2;
-    const l = new Mesh(G('bossLight', () => new SphereGeometry(0.13, 8, 6)), basic(i % 2 ? 0xffd23f : 0x00f5ff));
+    const l = new Mesh(G('bossLight', () => new SphereGeometry(0.13, 8, 6)), basic(i % 2 ? 0xffd23f : kind.dome));
     l.position.set(Math.cos(a) * (s.w / 2 - 0.25), s.h * 0.38, Math.sin(a) * (s.w / 2 - 0.25) * 0.7);
     lights.push(l);
   }
@@ -207,12 +211,91 @@ function boss() {
     c.position.set(x, s.h * 0.25, -0.9);
     return c;
   });
-  const core = glow(0xff2bd6, 3.2);
+  const core = glow(kind.core, 3.2);
   core.position.y = s.h * 0.45;
   g.add(core, hull, dome, ring, ...lights, ...cannons);
+
+  // Each boss type gets its own silhouette.
+  const accent = basic(kind.ring);
+  if (kind.id === 'scorpion') {
+    // Pincers in front, a curled tail with a glowing stinger behind.
+    for (const side of [-1, 1]) {
+      const claw = new Mesh(box(0.5, 0.35, 1.6), hullMat);
+      claw.position.set(side * 1.9, s.h * 0.35, -1.6);
+      claw.rotation.y = side * 0.35;
+      const tip = new Mesh(box(0.3, 0.3, 0.7), accent);
+      tip.position.set(side * 1.55, s.h * 0.35, -2.5);
+      tip.rotation.y = -side * 0.5;
+      g.add(claw, tip);
+    }
+    for (let i = 0; i < 4; i++) {
+      const seg = new Mesh(G('bossSeg', () => new SphereGeometry(0.42, 12, 8)), hullMat);
+      const a = (i / 3) * Math.PI * 0.85;
+      seg.position.set(0, s.h * 0.55 + Math.sin(a) * 1.5, 1.4 + Math.cos(a) * 0.9 - i * 0.15);
+      g.add(seg);
+    }
+    const sting = glow(kind.core, 1.4);
+    sting.position.set(0, s.h * 0.55 + 1.75, 0.8);
+    g.add(sting);
+  } else if (kind.id === 'carrier') {
+    // Side hangars with glowing bays (where the drones come from).
+    for (const side of [-1, 1]) {
+      const pod = new Mesh(G('bossPod', () => new CylinderGeometry(0.55, 0.55, 2.6, 14)), hullMat);
+      pod.rotation.x = Math.PI / 2;
+      pod.position.set(side * 2.9, s.h * 0.4, 0);
+      const bay = glow(kind.core, 1.3);
+      bay.position.set(side * 2.9, s.h * 0.4, -1.35);
+      g.add(pod, bay);
+    }
+  } else if (kind.id === 'overlord') {
+    // A crown of spikes and two horns.
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      const spike = new Mesh(G('bossSpike', () => new ConeGeometry(0.22, 1.1, 8)), accent);
+      spike.position.set(Math.cos(a) * (s.w / 2), s.h * 0.45, Math.sin(a) * (s.w / 2) * 0.7);
+      spike.rotation.z = -Math.cos(a) * 1.2;
+      spike.rotation.x = Math.sin(a) * 1.2;
+      g.add(spike);
+    }
+    for (const side of [-1, 1]) {
+      const horn = new Mesh(G('bossHorn', () => new ConeGeometry(0.28, 1.6, 10)), lambert(0x1a0508, 0x330000));
+      horn.position.set(side * 0.8, s.h * 0.55 + 1.1, 0);
+      horn.rotation.z = -side * 0.45;
+      g.add(horn);
+    }
+  }
   // Drawn larger than its hitbox so it looks imposing from the chase camera.
   g.scale.setScalar(1.6);
   g.userData = { ring, lights, flash: [hull] };
+  return g;
+}
+
+/** Floating spiked mine dropped by bosses. */
+function mine() {
+  const g = new Group();
+  const core = new Mesh(G('mineCore', () => new IcosahedronGeometry(0.34, 0)), lambert(0x2a1a22, 0x3a0010));
+  core.position.y = 0.38;
+  const spikes = new Group();
+  spikes.position.y = 0.38;
+  // Cones point along +y: [direction, rotation x, rotation z] for the 6 axes.
+  const dirs = [
+    [[1, 0, 0], 0, -Math.PI / 2],
+    [[-1, 0, 0], 0, Math.PI / 2],
+    [[0, 1, 0], 0, 0],
+    [[0, -1, 0], Math.PI, 0],
+    [[0, 0, 1], Math.PI / 2, 0],
+    [[0, 0, -1], -Math.PI / 2, 0],
+  ];
+  for (const [[x, y, z], rx, rz] of dirs) {
+    const spike = new Mesh(G('mineSpike', () => new ConeGeometry(0.09, 0.3, 6)), basic(0xffd23f));
+    spike.position.set(x * 0.38, y * 0.38, z * 0.38);
+    spike.rotation.set(rx, 0, rz);
+    spikes.add(spike);
+  }
+  const light = glow(0xff2b2b, 1.1);
+  light.position.y = 0.38;
+  g.add(core, spikes, light);
+  g.userData = { spikes, light, flash: [core] };
   return g;
 }
 
@@ -299,7 +382,9 @@ export function buildEntity(e, theme) {
     case 'drone':
       return drone();
     case 'boss':
-      return boss();
+      return boss(e.bossKind);
+    case 'mine':
+      return mine();
     case 'coin':
       return coin();
     case 'gem':
@@ -313,6 +398,7 @@ export function buildEntity(e, theme) {
 export function poolKey(e, theme) {
   if (e.type === 'platform') return `platform_${e.d}_${theme.id}`;
   if (e.type === 'wall') return `wall_${theme.id}`;
+  if (e.type === 'boss') return `boss_${e.bossKind}`;
   return e.type;
 }
 

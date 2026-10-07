@@ -59,6 +59,7 @@ export const ENEMIES = Object.freeze({
   walker: { w: 1.2, h: 1.8, d: 1.0, hp: 3, walk: 4 },
   drone: { w: 1.2, h: 1.0, d: 1.0, hp: 2, y: 0.85, holdZ: [20, 30], stay: [6, 9], fireEvery: [1.4, 2.1], hop: [1.4, 2.4] },
   crate: { w: 1.4, h: 1.2, d: 1.4, hp: 2 },
+  mine: { w: 0.9, h: 0.7, d: 0.9, hp: 1 }, // dropped by bosses: shoot it or jump it
 });
 
 export const OBSTACLES = Object.freeze({
@@ -80,6 +81,20 @@ export const BOSS = Object.freeze({
   timeLimit: 45,
 });
 
+/**
+ * One boss per zone (cycling): each has its own colors and attack cycle.
+ * volley: plasma on two lanes, one free / burst: 3 aimed shots /
+ * sweep: shots lane after lane / mines: mines on 1-2 lanes / drones: 2 drones.
+ */
+export const BOSS_KINDS = Object.freeze([
+  { id: 'mothership', nameKey: 'bossMothership', patterns: ['volley', 'burst', 'volley'], hull: 0x2b2347, ring: 0xff2bd6, dome: 0x7ff3ff, core: 0xff2bd6 },
+  { id: 'scorpion', nameKey: 'bossScorpion', patterns: ['mines', 'volley', 'burst', 'mines', 'volley'], hull: 0x3d2410, ring: 0xff8a3d, dome: 0xffd23f, core: 0xff6a00 },
+  { id: 'carrier', nameKey: 'bossCarrier', patterns: ['drones', 'sweep', 'volley', 'burst'], hull: 0x173452, ring: 0x7ff3ff, dome: 0xe0f8ff, core: 0x3fd0ff },
+  { id: 'overlord', nameKey: 'bossOverlord', patterns: ['sweep', 'mines', 'burst', 'drones', 'volley'], hull: 0x3a0d14, ring: 0xff3860, dome: 0xffb3c1, core: 0xff2b2b },
+]);
+
+export const bossKind = (zoneIndex) => BOSS_KINDS[zoneIndex % BOSS_KINDS.length];
+
 export const ZONES = Object.freeze({
   bossAt: 700, // meters into a zone when the boss arrives
 });
@@ -87,7 +102,7 @@ export const ZONES = Object.freeze({
 export const SCORE = Object.freeze({
   coin: 10,
   gem: 50,
-  kill: { walker: 30, drone: 50, crate: 10, boss: 500 },
+  kill: { walker: 30, drone: 50, crate: 10, mine: 15, boss: 500 },
   comboWindow: 2.6,
   comboMax: 8,
 });
@@ -102,4 +117,4 @@ export const POWERUPS = Object.freeze({
   spawnEvery: [14, 24],
 });
 
-export const GAME3D = Object.freeze({ LANES, PLAYER, SPEED, WORLD, WEAPONS_STATS, BULLETS, ENEMIES, OBSTACLES, BOSS, ZONES, SCORE, POWERUPS });
+export const GAME3D = Object.freeze({ LANES, PLAYER, SPEED, WORLD, WEAPONS_STATS, BULLETS, ENEMIES, OBSTACLES, BOSS, BOSS_KINDS, ZONES, SCORE, POWERUPS });

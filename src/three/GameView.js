@@ -1,5 +1,6 @@
 import { AdditiveBlending, Group, Mesh, MeshBasicMaterial, SphereGeometry, TorusGeometry, Vector3 } from 'three';
 import { DEFAULT_EQUIPPED, getItem } from '../config/cosmetics.js';
+import { laneX } from '../config/game3d.config.js';
 import { animateCharacter, buildCharacter } from './Character.js';
 import { buildEntity, enemyShot, flash, playerShot, poolKey } from './models.js';
 import { Particles } from './Particles.js';
@@ -27,6 +28,9 @@ export class GameView {
     this.character = buildCharacter(equipped);
     this.root.add(this.character);
     this.weaponColor = getItem('weapon', equipped.weapon)?.color ?? 0x00f5ff;
+    this.shotKey = `shot_${this.weaponColor}`;
+    this.makeShot = () => playerShot(this.weaponColor);
+    this.frameStamp = 0;
     this.trailColors = getItem('trail', equipped.trail)?.colors ?? [0x00f5ff];
 
     this.shieldBubble = new Mesh(new SphereGeometry(1.15, 20, 14), new MeshBasicMaterial({ color: 0x39ff88, transparent: true, opacity: 0.22, depthWrite: false, blending: AdditiveBlending }));
@@ -156,11 +160,31 @@ export class GameView {
         case 'zone':
           this.theme = this.stage.environment.setTheme(e.index);
           break;
+        case 'bossDrop':
+          // Mines fall from the boss's belly.
+          for (const lane of e.lanes) ps.burst(X(laneX(lane)), 1.2, e.z, [0xffd23f, 0xff6a00, 0xffffff], 14, 4, 0.5, { up: -2 });
+          break;
+        case 'bossSummon':
+          ps.burst(X(e.x), e.y + 1, e.z - 2, [0x3fd0ff, 0xffffff], 40, 8, 0.8);
+          this.addShake(0.2);
+          break;
+        case 'bossSweep':
+          this.addShake(0.25);
+          break;
         default:
           break;
       }
     }
     return events;
+  }
+
+  /** Projects a world point (logic coordinates) to normalized screen coordinates (0..1, y down). */
+  screenPoint(x, y, z, out = { x: 0, y: 0, visible: false }) {
+    const v = this.tmp.set(X(x), y, z).project(this.stage.camera);
+    out.x = (v.x + 1) / 2;
+    out.y = (1 - v.y) / 2;
+    out.visible = v.z < 1 && out.x > -0.1 && out.x < 1.1;
+    return out;
   }
 
   addShake(amount) {
@@ -184,7 +208,8 @@ export class GameView {
       c.position.set(X(p.x), p.y, 0);
       const lean = Math.max(-0.35, Math.min(0.35, (X(p.x) - c.userData.lastX || 0) * 3));
       c.userData.lastX = X(p.x);
-      animateCharacter(c, { time: this.time, grounded: p.grounded, sliding: p.slide > 0, vy: p.vy, lean });
+      // World time: the run cycle stops with the game (pause, countdown, tutorial freeze).
+      animateCharacter(c, { time: w.time, grounded: p.grounded, sliding: p.slide > 0, vy: p.vy, lean });
       c.visible = p.invulnerable > 0 ? Math.floor(this.time * 14) % 2 === 0 : true;
     }
     c.userData.muzzle.visible = this.muzzleTimer > 0;
@@ -198,7 +223,7 @@ export class GameView {
     this.magnetRing.scale.setScalar(1 + Math.sin(this.time * 10) * 0.08);
 
     // Neon trail behind the runner.
-    if (w.state === 'running' && this.stage.quality.trail) {
+    if (w.state === 'running' && !this.frozen && this.stage.quality.trail) {
       this.trailTimer -= dt;
       if (this.trailTimer <= 0) {
         this.trailTimer = 0.025;
@@ -220,19 +245,21 @@ export class GameView {
 
   _syncEntities(dt) {
     const w = this.world;
-    const seen = new Set();
+    // Meshes not stamped this frame belong to entities that are gone
+    // (no per-frame Set: this runs every frame on low-end phones).
+    const stamp = (this.frameStamp = (this.frameStamp + 1) | 0);
     for (const e of w.entities) {
       let obj = this.meshes.get(e.id);
       if (!obj) {
         obj = this._acquire(poolKey(e, this.theme), () => buildEntity(e, this.theme));
         this.meshes.set(e.id, obj);
       }
-      seen.add(e.id);
+      obj.userData.stamp = stamp;
       obj.position.set(X(e.x), e.y, e.z);
       this._animateEntity(e, obj, dt);
     }
     for (const [id, obj] of this.meshes) {
-      if (!seen.has(id)) {
+      if (obj.userData.stamp !== stamp) {
         flash(obj, false);
         this.flashes.delete(obj);
         this._release(obj);
@@ -242,14 +269,24 @@ export class GameView {
 
     // The boss is a single mesh outside the entity list.
     if (w.boss) {
-      if (!this.bossMesh) this.bossMesh = this._acquire('boss', () => buildEntity({ type: 'boss' }, this.theme));
       const b = w.boss;
+      if (this.bossMesh && this.bossId !== b.id) {
+        // A different boss (each zone has its own model).
+        flash(this.bossMesh, false);
+        this._release(this.bossMesh);
+        this.bossMesh = null;
+      }
+      if (!this.bossMesh) {
+        const spec = { type: 'boss', bossKind: b.bossKind };
+        this.bossMesh = this._acquire(poolKey(spec, this.theme), () => buildEntity(spec, this.theme));
+        this.bossId = b.id;
+      }
       this.bossMesh.position.set(X(b.x), b.y + Math.sin(this.time * 2) * 0.2, b.z);
       this.bossMesh.rotation.z = Math.sin(this.time * 0.7) * 0.08;
       this.bossMesh.rotation.x = -0.28; // tip the saucer so the camera sees its top
       const { ring, lights } = this.bossMesh.userData;
       ring.rotation.z += dt * 2;
-      lights.forEach((l, i) => (l.visible = Math.floor(this.time * 6 + i) % 2 === 0));
+      for (let i = 0; i < lights.length; i++) lights[i].visible = Math.floor(this.time * 6 + i) % 2 === 0;
     } else if (this.bossMesh) {
       flash(this.bossMesh, false);
       this._release(this.bossMesh);
@@ -258,7 +295,7 @@ export class GameView {
   }
 
   _animateEntity(e, obj, dt) {
-    const t = this.time + (e.phase ?? e.id * 0.37);
+    const t = this.world.time + (e.phase ?? e.id * 0.37);
     switch (e.type) {
       case 'walker': {
         const swing = Math.sin(t * 10) * 0.6;
@@ -276,6 +313,12 @@ export class GameView {
       case 'gem':
         obj.userData.spin.rotation.y = t * 4;
         break;
+      case 'mine':
+        obj.userData.spikes.rotation.y = t * 3;
+        obj.userData.spikes.rotation.x = t * 1.7;
+        obj.userData.light.visible = Math.floor(t * 8) % 2 === 0;
+        obj.position.y += Math.sin(t * 4) * 0.06;
+        break;
       default:
         if (obj.userData.bob) {
           obj.position.y += Math.sin(t * 3) * 0.15;
@@ -286,28 +329,28 @@ export class GameView {
 
   _syncShots() {
     const w = this.world;
-    const sync = (list, map, key, make) => {
-      const seen = new Set();
-      for (const s of list) {
-        let obj = map.get(s.id);
-        if (!obj) {
-          obj = this._acquire(key, make);
-          map.set(s.id, obj);
-        }
-        seen.add(s.id);
-        obj.position.set(X(s.x), s.y, s.z);
-        if (s.vx) obj.rotation.y = Math.atan2(-s.vx, s.speed);
-        else obj.rotation.y = 0;
+    const stamp = this.frameStamp;
+    this._syncShotList(w.shots, this.shotMeshes, this.shotKey, this.makeShot, stamp);
+    this._syncShotList(w.eshots, this.eshotMeshes, 'eshot', enemyShot, stamp);
+  }
+
+  _syncShotList(list, map, key, make, stamp) {
+    for (const s of list) {
+      let obj = map.get(s.id);
+      if (!obj) {
+        obj = this._acquire(key, make);
+        map.set(s.id, obj);
       }
-      for (const [id, obj] of map) {
-        if (!seen.has(id)) {
-          this._release(obj);
-          map.delete(id);
-        }
+      obj.userData.stamp = stamp;
+      obj.position.set(X(s.x), s.y, s.z);
+      obj.rotation.y = s.vx ? Math.atan2(-s.vx, s.speed) : 0;
+    }
+    for (const [id, obj] of map) {
+      if (obj.userData.stamp !== stamp) {
+        this._release(obj);
+        map.delete(id);
       }
-    };
-    sync(w.shots, this.shotMeshes, `shot_${this.weaponColor}`, () => playerShot(this.weaponColor));
-    sync(w.eshots, this.eshotMeshes, 'eshot', enemyShot);
+    }
   }
 
   _updateCamera(dt) {

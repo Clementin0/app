@@ -92,6 +92,9 @@ export class LaneWorld {
       fireCooldown: 0,
     };
     this.combo = { count: 0, timer: 0, best: 0 };
+    // Tutorial hooks: no random rows, and nothing can hurt the player.
+    this.spawnPaused = false;
+    this.safe = false;
     this.stats = { kills: 0, drones: 0, walkers: 0, crates: 0, bosses: 0, jumps: 0, slides: 0, shots: 0 };
     this.spawner.reset();
     // First rows appear ~50 m ahead, so the action starts within seconds.
@@ -180,6 +183,7 @@ export class LaneWorld {
       // Slam down, then slide on landing.
       p.vy = Math.min(p.vy, this.cfg.PLAYER.slamVelocity);
       p.bufferSlide = this.cfg.PLAYER.inputBuffer + 0.3;
+      this._emit('slam', {});
       return false;
     }
     return this._doSlide();
@@ -240,6 +244,14 @@ export class LaneWorld {
 
   // ------------------------------------------------------- zones & boss
 
+  /** Restarts random spawning ~50 m ahead (after the tutorial). */
+  resumeSpawns() {
+    this.spawnPaused = false;
+    this.distanceToNext = 50 - this.cfg.WORLD.spawnZ;
+    this.nextPowerupAt = this.time + this.rng.range(...this.cfg.POWERUPS.spawnEvery);
+    this.zone.start = this.distance;
+  }
+
   get zoneProgress() {
     return this.distance - this.zone.start;
   }
@@ -256,6 +268,8 @@ export class LaneWorld {
     const { BOSS } = this.cfg;
     const zone = this.zone.index;
     const hp = BOSS.baseHp + BOSS.hpPerZone * zone;
+    const kinds = this.cfg.BOSS_KINDS ?? GAME3D.BOSS_KINDS;
+    const bossKind = kinds[zone % kinds.length];
     this.boss = {
       id: this.nextId++,
       kind: 'boss',
@@ -270,14 +284,17 @@ export class LaneWorld {
       maxHp: hp,
       dead: false,
       t: 0,
+      bossKind: bossKind.id,
+      patterns: bossKind.patterns,
       attackTimer: 2.5,
       attackIndex: 0,
-      burst: 0,
-      burstTimer: 0,
+      queue: [], // pending single shots: a lane, or null = aimed at the player
+      queueGap: 0.28,
+      queueTimer: 0,
       lifetime: 0,
       leaving: false,
     };
-    this._emit('bossSpawn', { zone, hp });
+    this._emit('bossSpawn', { zone, hp, bossKind: bossKind.id });
   }
 
   _finishBoss(defeated) {
@@ -319,28 +336,69 @@ export class LaneWorld {
     }
     if (b.z > BOSS.z + 0.5) return;
 
-    // Burst in progress: aimed shots at the player's lane.
-    if (b.burst > 0) {
-      b.burstTimer -= dt;
-      if (b.burstTimer <= 0) {
-        this._enemyShot(laneX(this.player.lane), b.z - 1.5, 'boss');
-        b.burst -= 1;
-        b.burstTimer = 0.28;
+    // Queued shots (bursts and sweeps) fire one after the other.
+    if (b.queue.length) {
+      b.queueTimer -= dt;
+      if (b.queueTimer <= 0) {
+        const lane = b.queue.shift();
+        this._enemyShot(laneX(lane ?? this.player.lane), b.z - 1.5, 'boss');
+        b.queueTimer = b.queueGap;
       }
       return;
     }
     b.attackTimer -= dt;
     if (b.attackTimer > 0) return;
-    const pattern = b.attackIndex % 3;
+    const pattern = b.patterns[b.attackIndex % b.patterns.length];
     b.attackIndex += 1;
     b.attackTimer = Math.max(0.8, BOSS.attackEvery - BOSS.attackSpeedup * this.zone.index);
-    if (pattern === 1) {
-      b.burst = 3;
-      b.burstTimer = 0;
-    } else {
-      // Volley on two lanes, one lane always free.
-      const free = this.rng.int(0, LANES.count - 1);
-      for (let lane = 0; lane < LANES.count; lane++) if (lane !== free) this._enemyShot(laneX(lane), b.z - 1.5, 'boss');
+    this._bossAttack(b, pattern);
+  }
+
+  _bossAttack(b, pattern) {
+    const lanes = this.cfg.LANES.count;
+    switch (pattern) {
+      case 'burst':
+        b.queue.push(null, null, null);
+        b.queueGap = 0.28;
+        b.queueTimer = 0;
+        break;
+      case 'sweep': {
+        // Lane after lane: slide under it or slip behind it.
+        const order = this.rng.chance(0.5) ? [0, 1, 2] : [2, 1, 0];
+        b.queue.push(...order.slice(0, lanes));
+        b.queueGap = 0.22;
+        b.queueTimer = 0;
+        this._emit('bossSweep', { x: b.x, z: b.z });
+        break;
+      }
+      case 'mines': {
+        // One or two lanes, never all of them.
+        const count = this.rng.chance(0.5) ? 1 : 2;
+        const free = this.rng.int(0, lanes - 1);
+        const options = [];
+        for (let lane = 0; lane < lanes; lane++) if (lane !== free) options.push(lane);
+        const picked = count === 1 ? [this.rng.pick(options)] : options;
+        for (const lane of picked) this._addEntity({ type: 'mine', lane, dz: 0 }, b.z - 2);
+        this._emit('bossDrop', { x: b.x, y: b.y, z: b.z - 2, lanes: picked });
+        break;
+      }
+      case 'drones':
+        if (this._activeDrones() < 2) {
+          const free = this.rng.int(0, lanes - 1);
+          for (let lane = 0, n = 0; lane < lanes && n < 2; lane++) {
+            if (lane === free) continue;
+            this._addEntity({ type: 'drone', lane, dz: 0 }, b.z - 3);
+            n += 1;
+          }
+          this._emit('bossSummon', { x: b.x, y: b.y, z: b.z });
+          break;
+        }
+      // falls through: enough drones around, fire a volley instead
+      default: {
+        // Volley on all lanes but one.
+        const free = this.rng.int(0, lanes - 1);
+        for (let lane = 0; lane < lanes; lane++) if (lane !== free) this._enemyShot(laneX(lane), b.z - 1.5, 'boss');
+      }
     }
   }
 
@@ -353,6 +411,7 @@ export class LaneWorld {
       e.z -= dz;
       if (e.type === 'walker') e.z -= this.cfg.ENEMIES.walker.walk * dt;
     }
+    if (this.spawnPaused) return;
 
     const bossPhase = this.boss || (!this.zone.bossDone && this.zoneProgress >= this.cfg.ZONES.bossAt - 60);
     this.distanceToNext -= dz;
@@ -407,6 +466,7 @@ export class LaneWorld {
         break;
       }
       case 'crate':
+      case 'mine':
       case 'walker': {
         const s = ENEMIES[item.type];
         const hp = s.hp + Math.floor(this.zone.index / 2);
@@ -581,9 +641,11 @@ export class LaneWorld {
         continue;
       }
       // Targets: enemies, the boss, enemy plasma, and solid obstacles that absorb shots.
-      const targets = this.boss && !this.boss.leaving ? [...this.entities, this.boss] : this.entities;
-      for (const e of targets) {
-        if (e.dead || s.dead || e.kind === 'pickup' || s.hits.has(e.id)) continue;
+      const n = this.entities.length;
+      const boss = this.boss && !this.boss.leaving ? this.boss : null;
+      for (let i = 0; i <= n; i++) {
+        const e = i < n ? this.entities[i] : boss;
+        if (!e || e.dead || s.dead || e.kind === 'pickup' || s.hits.has(e.id)) continue;
         if (e.type === 'barrier') continue; // shots fly over barriers
         const zMin = e.z - e.d / 2 - 0.3;
         const zMax = e.z + e.d / 2 + 0.3;
@@ -642,7 +704,7 @@ export class LaneWorld {
     const mult = this.player.double > 0 ? 2 : 1;
     const points = (SCORE.kill[e.type] ?? 10) * c.count * mult;
     this.score.addBonus(points);
-    this.stats.kills += e.type === 'crate' ? 0 : 1;
+    this.stats.kills += e.type === 'crate' || e.type === 'mine' ? 0 : 1;
     if (e.type === 'drone') this.stats.drones += 1;
     if (e.type === 'walker') this.stats.walkers += 1;
     if (e.type === 'crate') this.stats.crates += 1;
@@ -650,7 +712,7 @@ export class LaneWorld {
     if (c.count >= 2) this._emit('combo', { count: c.count });
 
     // Loot: a few coins (and sometimes a gem) pop out.
-    const coins = e.type === 'drone' ? 3 : 2;
+    const coins = e.type === 'drone' ? 3 : e.type === 'mine' ? 0 : 2;
     for (let i = 0; i < coins; i++) {
       this._addEntity({ type: 'coin', lane: e.lane ?? 1, dz: 1.2 + i * 1.6, y: 0.6 }, e.z).x = e.x;
     }
@@ -672,7 +734,7 @@ export class LaneWorld {
         if (p.y < e.y + e.h - tol) this._crash(e);
       } else if (e.kind === 'obstacle') {
         this._crash(e);
-      } else if (e.type === 'walker' || e.type === 'crate') {
+      } else if (e.type === 'walker' || e.type === 'crate' || e.type === 'mine') {
         e.dead = true;
         this._emit('smash', { id: e.id, enemy: e.type, x: e.x, y: e.y + e.h / 2, z: e.z });
         this._damage(e.type);
@@ -696,7 +758,7 @@ export class LaneWorld {
   /** Hitting an obstacle: lethal unless shielded or invulnerable. */
   _crash(e) {
     const p = this.player;
-    if (p.invulnerable > 0) return;
+    if (p.invulnerable > 0 || this.safe) return;
     if (p.shield) {
       p.shield = false;
       p.invulnerable = this.cfg.POWERUPS.shieldGrace;
@@ -710,7 +772,7 @@ export class LaneWorld {
   /** Enemy contact or plasma: costs one heart. */
   _damage(cause) {
     const p = this.player;
-    if (p.invulnerable > 0) return;
+    if (p.invulnerable > 0 || this.safe) return;
     if (p.shield) {
       p.shield = false;
       p.invulnerable = this.cfg.POWERUPS.shieldGrace;
@@ -871,7 +933,7 @@ export class LaneWorld {
       comboTimer: this.combo.timer,
       zone: this.zone.index,
       zoneProgress: Math.min(1, this.zoneProgress / this.cfg.ZONES.bossAt),
-      boss: b ? { hp: Math.max(0, b.hp), maxHp: b.maxHp, leaving: b.leaving } : null,
+      boss: b ? { hp: Math.max(0, b.hp), maxHp: b.maxHp, leaving: b.leaving, kind: b.bossKind } : null,
       fireReady: p.fireCooldown <= 0,
     };
   }

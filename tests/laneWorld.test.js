@@ -268,6 +268,101 @@ describe('LaneWorld - boss and zones', () => {
   });
 });
 
+describe('LaneWorld - boss types', () => {
+  /** World in zone `index`, at the moment its boss arrives. */
+  function bossWorld(index, seed = 3) {
+    const w = quietWorld({ seed });
+    w.zone.index = index;
+    w.distance = GAME3D.ZONES.bossAt + 1;
+    w.step(DT);
+    return w;
+  }
+
+  it('each zone has its own boss, cycling after the fourth', () => {
+    expect(GAME3D.BOSS_KINDS.map((k) => k.id)).toEqual(['mothership', 'scorpion', 'carrier', 'overlord']);
+    for (let zone = 0; zone < 6; zone++) {
+      const w = bossWorld(zone);
+      expect(w.boss.bossKind).toBe(GAME3D.BOSS_KINDS[zone % 4].id);
+      expect(w.hud().boss.kind).toBe(w.boss.bossKind);
+      expect(w.drainEvents().find((e) => e.type === 'bossSpawn').bossKind).toBe(w.boss.bossKind);
+    }
+  });
+
+  it('the scorpion drops mines on one or two lanes, never all three', () => {
+    const w = bossWorld(1);
+    w.player.invulnerable = 1e9;
+    const drops = [];
+    run(w, 30, (world) => {
+      for (const e of world.drainEvents()) if (e.type === 'bossDrop') drops.push(e.lanes);
+    });
+    expect(drops.length).toBeGreaterThan(2);
+    for (const lanes of drops) {
+      expect(lanes.length).toBeGreaterThanOrEqual(1);
+      expect(lanes.length).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it('mines can be shot (no kill count) and cost a heart on contact', () => {
+    const w = quietWorld();
+    const mine = place(w, { type: 'mine', lane: 1 }, 25);
+    w.setFiring(true);
+    run(w, 1);
+    expect(mine.dead).toBe(true);
+    expect(w.stats.kills).toBe(0);
+    expect(w.score.bonus).toBeGreaterThan(0);
+
+    const w2 = quietWorld();
+    place(w2, { type: 'mine', lane: 1 }, 6);
+    run(w2, 1);
+    expect(w2.player.hp).toBe(PLAYER.baseHp - 1);
+    expect(types(w2)).toContain('smash');
+  });
+
+  it('the carrier summons at most a couple of drones at a time', () => {
+    const w = bossWorld(2);
+    w.player.invulnerable = 1e9;
+    let summons = 0;
+    let maxDrones = 0;
+    run(w, 30, (world) => {
+      for (const e of world.drainEvents()) if (e.type === 'bossSummon') summons += 1;
+      maxDrones = Math.max(maxDrones, world.entities.filter((e) => e.type === 'drone' && !e.dead).length);
+    });
+    expect(summons).toBeGreaterThan(0);
+    expect(maxDrones).toBeLessThanOrEqual(2);
+  });
+
+  it('the overlord sweeps shots lane after lane', () => {
+    const w = bossWorld(3);
+    w.player.invulnerable = 1e9;
+    let sweeps = 0;
+    const shotLanes = [];
+    run(w, 20, (world) => {
+      for (const e of world.drainEvents()) {
+        if (e.type === 'bossSweep') sweeps += 1;
+        if (e.type === 'enemyShot' && sweeps === 1 && shotLanes.length < 3) shotLanes.push(Math.round(e.x / GAME3D.LANES.width) + 1);
+      }
+    });
+    expect(sweeps).toBeGreaterThan(0);
+    expect([[0, 1, 2], [2, 1, 0]]).toContainEqual(shotLanes);
+  });
+
+  it('the autopilot survives every boss type on several seeds', () => {
+    for (let zone = 0; zone < 4; zone++) {
+      for (let seed = 1; seed <= 4; seed++) {
+        const w = bossWorld(zone, seed);
+        const bot = new Autopilot3D(w);
+        run(w, 60, () => {
+          bot.update(DT);
+          w.drainEvents();
+        });
+        const name = `${GAME3D.BOSS_KINDS[zone].id} seed ${seed}: ${w.deathCause}`;
+        expect(w.state, name).toBe('running');
+        expect(w.zone.index, name).toBe(zone + 1);
+      }
+    }
+  });
+});
+
 describe('LaneWorld - pickups, score and revive', () => {
   it('collects coins, gems and power-ups', () => {
     const w = quietWorld();

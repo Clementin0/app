@@ -13,6 +13,7 @@ export class PreviewView {
     this.time = 0;
     this.screenX = screenX;
     this.root = new Group();
+    this.lookAt = new Vector3(0, 1.0, 0);
     stage.scene.add(this.root);
     stage.environment.setTheme(0, true);
 
@@ -52,12 +53,12 @@ export class PreviewView {
     const halfW = Math.tan((cam.fov * Math.PI) / 360) * dist * aspect;
     const px = -this.screenX * halfW; // +x is screen-left
     cam.position.set(0, 1.7, -dist);
-    cam.lookAt(new Vector3(0, 1.0, 0));
+    cam.lookAt(this.lookAt);
     this.root.position.set(px, 0, 0);
 
     this.character.rotation.y = Math.PI + Math.sin(this.time * 0.6) * 0.9;
     animateCharacter(this.character, { time: this.time, grounded: true, sliding: false, vy: 0 });
-    this.character.userData.legs.forEach((l) => (l.rotation.x = 0));
+    for (const leg of this.character.userData.legs) leg.rotation.x = 0;
     this.ring.rotation.z += dt;
     if (Math.random() < dt * 8) this.particles.burst(px + (Math.random() - 0.5) * 2, 0.1, (Math.random() - 0.5) * 2, this.trail, 1, 0.8, 1.2, { up: 2.5 });
     this.particles.update(dt, 0);
@@ -66,5 +67,10 @@ export class PreviewView {
   dispose() {
     this.particles.dispose();
     this.stage.scene.remove(this.root);
+    // The pedestal is the only thing here not built from shared caches.
+    for (const mesh of this.pedestal.children) {
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    }
   }
 }
