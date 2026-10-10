@@ -72,6 +72,8 @@ export class GameScene extends Phaser.Scene {
     this.popupPoint = { x: 0, y: 0, visible: false };
     this.levelsUp = [];
     this.challengeReward = null;
+    this.challengeShown = false;
+    this.bossRushRecord = false;
   }
 
   create() {
@@ -87,10 +89,12 @@ export class GameScene extends Phaser.Scene {
     // Mode setup: the daily challenge has a fixed seed and a twist.
     let rng = createRng(Date.now() >>> 0);
     let modifiers = {};
+    let courseSeed = null;
     this.challenge = null;
     if (this.mode === 'daily') {
       this.challenge = dailyChallenge(Date.now());
       rng = createRng(this.challenge.seed);
+      courseSeed = this.challenge.seed ^ 0x5bd1e995;
       modifiers = this.challenge.modifier.modifiers;
       this.startBest = save.challengeStatus().best;
     } else if (this.mode === 'bossRush') {
@@ -99,7 +103,7 @@ export class GameScene extends Phaser.Scene {
       this.startBest = save.highScore;
     }
 
-    this.world = new LaneWorld({ rng, best: this.startBest, loadout: loadoutFrom(snap), mode: this.mode, modifiers });
+    this.world = new LaneWorld({ rng, best: this.startBest, loadout: loadoutFrom(snap), mode: this.mode, modifiers, courseSeed });
     this.view = stage.setView(new GameView(stage, this.world, { equipped: snap.equipped }));
     this.hud = new Hud(this, { onPause: () => this.pauseGame(), onSkipTutorial: () => this.tutorial?.finish() });
 
@@ -270,8 +274,11 @@ export class GameScene extends Phaser.Scene {
     const summary = w.score.summary();
     summary.meters = Math.floor(w.distance);
     // Each mode keeps its own record; the classic high score stays "endless" only.
-    if (this.mode === 'daily') this.challengeReward ??= save.submitChallenge({ score: summary.score, bosses: w.stats.bosses });
-    else if (this.mode === 'bossRush') this.bossRushRecord = save.submitBossRush({ bosses: w.stats.bosses, score: summary.score }) || this.bossRushRecord;
+    if (this.mode === 'daily') {
+      // Always submitted (the best of the day keeps rising); the reward is paid once.
+      const reward = save.submitChallenge({ score: summary.score, bosses: w.stats.bosses, day: this.challenge.day });
+      this.challengeReward ??= reward;
+    } else if (this.mode === 'bossRush') this.bossRushRecord = save.submitBossRush({ bosses: w.stats.bosses, score: summary.score }) || this.bossRushRecord;
     else save.submitScore(summary.score, summary.meters);
     save.addCurrency(summary.coins - this.committed.coins, summary.gems - this.committed.gems);
 
@@ -314,8 +321,9 @@ export class GameScene extends Phaser.Scene {
     const s = services.save.snapshot();
     this.scene.launch('GameOver', {
       ...summary,
-      best: this.mode === 'endless' ? summary.best : Math.max(summary.score, this.startBest),
-      isNewBest: summary.score > this.startBest && summary.score > 0,
+      best: this.mode === 'endless' ? summary.best : this.mode === 'bossRush' ? s.bossRushBest.score : Math.max(summary.score, this.startBest),
+      // Boss rush records go by bosses beaten first (as saved), then score.
+      isNewBest: this.mode === 'bossRush' ? this.bossRushRecord : summary.score > this.startBest && summary.score > 0,
       previousBest: this.startBest,
       mode: this.mode,
       bosses: this.world.stats.bosses,
@@ -512,6 +520,7 @@ export class GameScene extends Phaser.Scene {
         this._showZoneTitle(e.index, 1700);
         break;
       case 'newBest':
+        if (this.mode === 'bossRush') break; // that record goes by bosses beaten
         sfx.play('newBest');
         this.hud.showMessage(t('newRecord'), COLORS.green, 1200, 54);
         break;

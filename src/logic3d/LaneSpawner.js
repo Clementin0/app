@@ -10,6 +10,7 @@ import { GAME3D } from '../config/game3d.config.js';
  */
 
 const COIN_SPACING = 2.4;
+const FLYER_WINDOW = 4; // rows
 
 export function coinLine(lane, dz0, n, y = 0.5) {
   return Array.from({ length: n }, (_, i) => ({ type: 'coin', lane, dz: dz0 + i * COIN_SPACING, y }));
@@ -268,6 +269,12 @@ export class LaneSpawner {
   reset() {
     this.history = [];
     this.count = 0;
+    this.recentFlyers = [];
+  }
+
+  /** Flying enemies spawned in the last few rows. */
+  get flyers() {
+    return this.recentFlyers.reduce((s, n) => s + n, 0);
   }
 
   gapRange(speed, level) {
@@ -279,6 +286,11 @@ export class LaneSpawner {
     this.history.push(key);
     if (this.history.length > 6) this.history.shift();
     this.count += 1;
+    // Flying enemies of the last few rows (they hover ~6-10 s): a cap that
+    // depends only on the course, not on what the player shot down.
+    const flyers = built.items.filter((i) => i.type === 'drone' || i.type === 'bomber').length;
+    this.recentFlyers.push(flyers);
+    if (this.recentFlyers.length > FLYER_WINDOW) this.recentFlyers.shift();
     const gap = this.gapRange(speed, level);
     return { key, length: built.length, items: built.items, gapAfter: this.rng.range(gap.min, gap.max) };
   }
@@ -298,8 +310,8 @@ export class LaneSpawner {
     return this._finish('coinsOnly', { length: 6 * COIN_SPACING, items: coinLine(lane, 0, 7) }, speed, 0);
   }
 
-  next(level, speed, drones = 0) {
-    const ctx = { rng: this.rng, speed, level, drones };
+  next(level, speed) {
+    const ctx = { rng: this.rng, speed, level, drones: this.flyers };
     if (this.count === 0) return this._finish('coinLine', PATTERNS3D[0].build(ctx), speed, level);
     const [a, b] = this.history.slice(-2);
     let pool = PATTERNS3D.filter((p) => level >= p.minLevel && (!p.allowed || p.allowed(ctx)));

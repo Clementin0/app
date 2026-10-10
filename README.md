@@ -165,7 +165,7 @@ store/                      icona 512×512 e feature graphic 1024×500 per il Pl
 ```bash
 npm install            # dipendenze
 npm run dev            # gioco nel browser con hot reload (annunci simulati)
-npm test               # 101 test unitari (mondo 3D, armi, 4 boss, tutorial, missioni, ricompensa giornaliera, grafica adattiva, salvataggi, negozio, lingue, annunci)
+npm test               # 130 test unitari (mondo 3D, armi, nemici, ostacoli, eventi, jetpack, 6 boss, potenziamenti, modalità, livelli, tutorial, missioni, ricompensa giornaliera, grafica adattiva, salvataggi, negozio, lingue, annunci)
 npm run build          # bundle web di produzione in dist/
 npm run verify         # gioca la build in Chromium headless e verifica tutto il flusso
 npm run cap:sync       # build + npx cap sync android + configurazione Android
@@ -173,7 +173,7 @@ npm run cap:open       # apre il progetto in Android Studio
 npm run release:check  # controlla che la release non usi gli ID AdMob di test
 ```
 
-`npm run verify` emula un telefono in landscape con touch e gioca davvero, con swipe e tocchi. Controlla 45 punti, tra cui:
+`npm run verify` emula un telefono in landscape con touch e gioca davvero, con swipe e tocchi. Controlla 51 punti, tra cui:
 - avvio dei due renderer (Three.js e Phaser) e demo 3D nel menu;
 - ricompensa giornaliera riscossa una volta sola;
 - banner nel menu, nascosto in gioco;
@@ -222,7 +222,8 @@ La GitHub Action [`.github/workflows/android.yml`](.github/workflows/android.yml
 ## Note tecniche
 
 - Due canvas sovrapposti: sotto il `WebGLRenderer` di Three.js (`#stage`), sopra il canvas trasparente di Phaser (`#game`) con interfaccia e input. Il rendering 3D avviene a ogni passo del gameloop di Phaser, così i due livelli restano sincronizzati.
-- La logica di gioco (`src/logic3d`) non dipende né da Phaser né da Three.js: le viste ne leggono lo stato e reagiscono a una coda di eventi (colpi, uccisioni, boss...). Per questo fisica, collisioni, armi, boss, tutorial, missioni e revive sono coperti da test deterministici in Node. Un'IA gioca 3 minuti di partita su 12 seed diversi attraversando zone, e affronta ognuno dei 4 boss su più seed, per verificare che pattern e attacchi siano sempre superabili.
+- La logica di gioco (`src/logic3d`) non dipende né da Phaser né da Three.js: le viste ne leggono lo stato e reagiscono a una coda di eventi (colpi, uccisioni, boss...). Per questo fisica, collisioni, armi, nemici, eventi, boss, potenziamenti, modalità, tutorial, missioni e revive sono coperti da test deterministici in Node. Un'IA gioca 3 minuti di partita su 12 seed diversi attraversando zone, affronta ognuno dei 6 boss su più seed e gioca Boss Rush e sfide giornaliere, per verificare che pattern, eventi e attacchi siano sempre superabili.
+- Nella sfida giornaliera il percorso (righe di ostacoli, power-up, eventi) ha un seme separato dal resto, quindi è lo stesso per tutti qualunque cosa si colpisca.
 - Prestazioni su mobile:
   - materiali e geometrie condivisi, mesh riutilizzate in pool, edifici in `InstancedMesh`;
   - circa 80 draw call per frame;

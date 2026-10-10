@@ -323,3 +323,45 @@ describe('v3 modes', () => {
     }
   });
 });
+
+describe('v3 review fixes', () => {
+  it('a charging ram cannot pass through the player at 20 fps', () => {
+    let hits = 0;
+    for (let seed = 1; seed <= 20; seed++) {
+      const w = quietWorld({ seed });
+      w.time = 200; // top speed
+      const ram = place(w, { type: 'charger', lane: 1 }, 40);
+      for (let i = 0; i < 80 && !ram.dead; i++) w.step(1 / 20);
+      if (w.player.hp < PLAYER.baseHp) hits += 1;
+    }
+    expect(hits).toBe(20);
+  });
+
+  // (Clearing an ambush early ends it sooner, which is a legitimate difference.)
+  it('the course of a seeded run does not depend on what the player shoots', () => {
+    const rows = (shoot) => {
+      const w = new LaneWorld({ rng: createRng(9), courseSeed: 1234, modifiers: { event: 'meteors' } });
+      w.player.invulnerable = 1e9;
+      const keys = [];
+      for (let i = 0; i < 60 * 60; i++) {
+        w.setFiring(shoot && i % 120 < 60);
+        w.step(DT);
+      }
+      keys.push(...w.spawner.history);
+      return { keys, count: w.spawner.count };
+    };
+    expect(rows(true)).toEqual(rows(false));
+  });
+
+  it('only events seen through count (a failed ambush does not)', () => {
+    const w = quietWorld();
+    w._startEvent('ambush');
+    w.event.waves = 3;
+    w.event.spawned = [{ dead: true, killed: false, z: 0, d: 1 }];
+    w._endEvent();
+    expect(w.stats.events).toBe(0);
+    w._startEvent('goldRush');
+    w._endEvent();
+    expect(w.stats.events).toBe(1);
+  });
+});

@@ -112,8 +112,10 @@ export class MenuScene extends Phaser.Scene {
     this.version = this.add.text(0, 0, `v${APP_VERSION}`, textStyle(18, '#a99bd6', { strokeThickness: 3 })).setOrigin(1, 1).setDepth(70);
     this.tweens.add({ targets: this.titles, y: '-=10', duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
-    this.input.keyboard?.on('keydown-SPACE', () => this.startGame());
-    this.input.keyboard?.on('keydown-ENTER', () => this.startGame());
+    // Keyboard start only when no overlay (modes, settings) is open.
+    const keyStart = () => !this.scene.isActive('Modes') && !this.scene.isActive('Settings') && this.startGame();
+    this.input.keyboard?.on('keydown-SPACE', keyStart);
+    this.input.keyboard?.on('keydown-ENTER', keyStart);
 
     bindLayout(this, (w, h) => this.layout(w, h));
 

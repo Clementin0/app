@@ -28,9 +28,11 @@ export class GameView {
     stage.scene.add(this.root);
     this.theme = stage.environment.setTheme(world.zone.index, true);
 
-    this.character = buildCharacter(equipped);
+    // The run's weapon (a daily challenge can force one) drives model and shots.
+    const weapon = world.loadout?.weapon ?? equipped.weapon;
+    this.character = buildCharacter({ ...equipped, weapon });
     this.root.add(this.character);
-    this.weaponColor = getItem('weapon', equipped.weapon)?.color ?? 0x00f5ff;
+    this.weaponColor = getItem('weapon', weapon)?.color ?? 0x00f5ff;
     this.shotKey = `shot_${this.weaponColor}`;
     this.makeShot = () => playerShot(this.weaponColor);
     this.frameStamp = 0;

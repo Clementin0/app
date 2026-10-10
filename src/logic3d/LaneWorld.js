@@ -41,14 +41,17 @@ export function entityBox(e) {
  * rewarded revive. Rendering (Three.js) and HUD (Phaser) only read its state.
  */
 export class LaneWorld {
-  constructor({ rng, config = GAME3D, best = 0, loadout = {}, mode = 'endless', modifiers = {} } = {}) {
+  constructor({ rng, config = GAME3D, best = 0, loadout = {}, mode = 'endless', modifiers = {}, courseSeed = null } = {}) {
     this.cfg = config;
     this.rng = rng ?? createRng();
+    // The course (rows, power-ups, events) can have its own seed, so the
+    // daily challenge stays the same whatever the player shoots.
+    this.courseRng = courseSeed === null ? this.rng : createRng(courseSeed);
     this.mode = mode; // 'endless' | 'daily' | 'bossRush'
     this.modifiers = { ...DEFAULT_MODIFIERS, ...modifiers };
     this.loadout = { ...DEFAULT_LOADOUT, ...loadout };
     if (this.modifiers.weapon) this.loadout.weapon = this.modifiers.weapon;
-    this.spawner = new LaneSpawner(this.rng, config);
+    this.spawner = new LaneSpawner(this.courseRng, config);
     this.score = new ScoreManager({ scoring: { pointsPerMeter: 1, coinValue: config.SCORE.coin, gemValue: config.SCORE.gem }, pixelsPerMeter: 1, best });
     this.nextId = 1;
     this.reset();
@@ -132,7 +135,7 @@ export class LaneWorld {
     this.spawner.reset();
     // First rows appear ~50 m ahead, so the action starts within seconds.
     this.distanceToNext = 50 - this.cfg.WORLD.spawnZ;
-    this.nextPowerupAt = this.rng.range(...POWERUPS.spawnEvery);
+    this.nextPowerupAt = this.courseRng.range(...POWERUPS.spawnEvery);
     this.score.reset();
   }
 
@@ -312,7 +315,7 @@ export class LaneWorld {
   resumeSpawns() {
     this.spawnPaused = false;
     this.distanceToNext = 50 - this.cfg.WORLD.spawnZ;
-    this.nextPowerupAt = this.time + this.rng.range(...this.cfg.POWERUPS.spawnEvery);
+    this.nextPowerupAt = this.time + this.courseRng.range(...this.cfg.POWERUPS.spawnEvery);
     this.zone.start = this.distance;
   }
 
@@ -343,14 +346,13 @@ export class LaneWorld {
     const options = Object.entries(this.cfg.EVENTS)
       .filter(([type, e]) => this.zone.index >= e.minZone && type !== this.lastEvent)
       .map(([type]) => type);
-    return options.length ? this.rng.pick(options) : null;
+    return options.length ? this.courseRng.pick(options) : null;
   }
 
   _startEvent(type) {
     const cfg = this.cfg.EVENTS[type];
     this.event = { type, t: 0, duration: cfg.duration, waves: 0, waveTimer: 1.2, spawned: [], nextMeteor: 0.5 };
     this.lastEvent = type;
-    this.stats.events += 1;
     this._emit('eventStart', { event: type, duration: cfg.duration });
   }
 
@@ -394,6 +396,8 @@ export class LaneWorld {
       }
     }
     this.event = null;
+    // Only events seen through (an ambush must be cleared) count for missions and XP.
+    if (success) this.stats.events += 1;
     this._emit('eventEnd', { event: ev.type, success, reward });
   }
 
@@ -579,6 +583,7 @@ export class LaneWorld {
       // Hovering drones / bombers and a winding-up ram keep pace with the player.
       if ((e.type === 'drone' || e.type === 'bomber') && e.state !== 'approach') continue;
       if (e.type === 'charger' && e.state === 'windup') continue;
+      if (e.type === 'charger') e.prevZ = e.z; // for the swept collision below
       e.z -= dz;
       if (e.type === 'walker') e.z -= this.cfg.ENEMIES.walker.walk * dt;
       else if (e.type === 'charger' && e.state === 'charge') e.z -= this.cfg.ENEMIES.charger.charge * dt;
@@ -596,13 +601,13 @@ export class LaneWorld {
           ? this.spawner.goldRush(this.speed)
           : quiet
             ? this.spawner.coinsOnly(this.speed)
-            : this.spawner.next(this.level, this.speed, this._activeFlyers());
+            : this.spawner.next(this.level, this.speed);
       for (const item of pattern.items) this._addEntity(item, z0);
 
       if (!bossPhase && !ev && this.time >= this.nextPowerupAt) {
         const type = this._pickPowerup();
-        this._addEntity({ type, lane: this.rng.int(0, 2), dz: pattern.length + pattern.gapAfter / 2, y: 0.5 }, z0);
-        this.nextPowerupAt = this.time + this.rng.range(...POWERUPS.spawnEvery) * (this.perks.lucky ? PERK_TUNING.luckyEvery : 1);
+        this._addEntity({ type, lane: this.courseRng.int(0, 2), dz: pattern.length + pattern.gapAfter / 2, y: 0.5 }, z0);
+        this.nextPowerupAt = this.time + this.courseRng.range(...POWERUPS.spawnEvery) * (this.perks.lucky ? PERK_TUNING.luckyEvery : 1);
       }
       this.distanceToNext += pattern.length + pattern.gapAfter;
     }
@@ -612,19 +617,17 @@ export class LaneWorld {
     return this.entities.filter((e) => e.type === 'drone' && !e.dead).length;
   }
 
-  /** Flying enemies (drones and bombers) around: the spawner caps them. */
-  _activeFlyers() {
-    return this.entities.filter((e) => (e.type === 'drone' || e.type === 'bomber') && !e.dead).length;
-  }
 
   _pickPowerup() {
     const p = this.player;
     const pool = ['magnet', 'rapid', 'double'];
     if (!p.shield) pool.push('shield', 'shield');
     // The jetpack is rarer, and never during a flight already.
-    if (p.jetpack <= 0 && this.rng.chance(0.5)) pool.push('jetpack');
+    // (the draw always happens, so the course stays the same whatever the player state)
+    const jet = this.courseRng.chance(0.5);
+    if (p.jetpack <= 0 && jet) pool.push('jetpack');
     if (p.hp < this.maxHp) pool.push('heart', 'heart');
-    return this.rng.pick(pool);
+    return this.courseRng.pick(pool);
   }
 
   _addEntity(item, z0) {
@@ -1076,6 +1079,9 @@ export class LaneWorld {
     for (const e of this.entities) {
       if (e.dead || e.kind === 'pickup' || e.kind === 'hazard') continue;
       const b = entityBox(e);
+      // A charging ram moves ~3 m per step at low frame rates: sweep its box
+      // back to where it was, so it cannot jump through the player.
+      if (e.type === 'charger' && e.prevZ !== undefined) b.z1 = Math.max(b.z1, e.prevZ + e.d / 2);
       if (!overlaps(box, b)) continue;
       if (e.type === 'platform') {
         if (p.y < e.y + e.h - tol) this._crash(e);

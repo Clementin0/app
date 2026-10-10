@@ -61,7 +61,8 @@ export class PerkScene extends Phaser.Scene {
     const title = glow(this.add.text(0, 30, t('perkTitle'), textStyle(46, '#ffd23f')).setOrigin(0.5), COLORS.orange, 18);
     const sub = this.add.text(0, 78, t('perkSub'), textStyle(22, '#e9ddff')).setOrigin(0.5);
     this.panel.add([title, sub]);
-    this.cards = this.options.map((id, i) => new PerkCard(this, -DESIGN_W / 2 + CARD_W / 2 + i * (CARD_W + GAP), 290, id, this.levels[id] ?? 0, (pick) => this.pick(pick)));
+    const n = this.options.length;
+    this.cards = this.options.map((id, i) => new PerkCard(this, (i - (n - 1) / 2) * (CARD_W + GAP), 290, id, this.levels[id] ?? 0, (pick) => this.pick(pick)));
     this.panel.add(this.cards);
     this.cards.forEach((c, i) => {
       c.setAlpha(0).setY(c.y + 40);

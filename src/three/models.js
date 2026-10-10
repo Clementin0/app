@@ -159,7 +159,12 @@ function gap(depth) {
   warn.position.set(0, 0.025, -depth / 2 - 0.35);
   const glowUp = glow(0xff2244, 2.6);
   glowUp.position.y = 0.3;
-  g.add(pit, ...sides, ...ends, warn, glowUp);
+  // The entity's origin is the bottom of its hitbox (y = -1): lift the
+  // visuals back to the road surface.
+  const inner = new Group();
+  inner.position.y = -s.y;
+  inner.add(pit, ...sides, ...ends, warn, glowUp);
+  g.add(inner);
   return g;
 }
 

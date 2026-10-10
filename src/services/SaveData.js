@@ -253,8 +253,9 @@ export class SaveData {
   }
 
   /** Records a daily challenge run; returns the reward the first time a boss falls today. */
-  submitChallenge({ score = 0, bosses = 0 } = {}) {
-    const today = dayNumber(this.now());
+  submitChallenge({ score = 0, bosses = 0, day = null } = {}) {
+    // The run is credited to the day it started (a run can cross midnight).
+    const today = Number.isInteger(day) ? day : dayNumber(this.now());
     if (this.data.challenge.day !== today) this.data.challenge = { day: today, best: 0, done: false };
     const c = this.data.challenge;
     c.best = Math.max(c.best, toCount(score));
