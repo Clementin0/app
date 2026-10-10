@@ -119,6 +119,67 @@ function platform(theme, depth) {
   return g;
 }
 
+/** Barrier gliding across the lanes: same height as a barrier, neon striped. */
+function slider() {
+  const s = GAME3D.OBSTACLES.slider;
+  const g = new Group();
+  const body = new Mesh(box(s.w, s.h, s.d), M('hazardSlider', () => new MeshLambertMaterial({ map: hazardTexture(), color: 0x9fe8ff, emissive: 0x002233 })));
+  body.position.y = s.h / 2;
+  const top = new Mesh(box(s.w, 0.08, s.d + 0.04), basic(0x00f5ff));
+  top.position.y = s.h;
+  const lights = [-1, 1].map((side) => {
+    const l = glow(0x00f5ff, 0.9);
+    l.position.set(side * (s.w / 2 + 0.1), s.h * 0.6, 0);
+    return l;
+  });
+  g.add(body, top, ...lights);
+  g.userData = { lights };
+  return g;
+}
+
+/** A hole in the road: black pit with a glowing red rim and a warning strip. */
+function gap(depth) {
+  const s = GAME3D.OBSTACLES.gap;
+  const g = new Group();
+  const pit = new Mesh(box(s.w, 0.04, depth), basic(0x000000));
+  pit.position.y = 0.02;
+  // Thick glowing rim, so the hole reads from far away.
+  const rimMat = basic(0xff2244);
+  const sides = [-1, 1].map((side) => {
+    const r = new Mesh(box(0.14, 0.07, depth), rimMat);
+    r.position.set(side * (s.w / 2 - 0.07), 0.035, 0);
+    return r;
+  });
+  const ends = [-1, 1].map((end) => {
+    const r = new Mesh(box(s.w, 0.07, 0.14), rimMat);
+    r.position.set(0, 0.035, end * (depth / 2 - 0.07));
+    return r;
+  });
+  const warn = new Mesh(box(s.w, 0.05, 0.4), basic(0xffd23f));
+  warn.position.set(0, 0.025, -depth / 2 - 0.35);
+  const glowUp = glow(0xff2244, 2.6);
+  glowUp.position.y = 0.3;
+  g.add(pit, ...sides, ...ends, warn, glowUp);
+  return g;
+}
+
+/** Meteor: a pulsing target ring on the road and a fireball falling onto it. */
+function meteor() {
+  const g = new Group();
+  const ring = new Mesh(G('meteorRing', () => new TorusGeometry(0.95, 0.08, 6, 32)), basic(0xff3860));
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 0.05;
+  const disc = new Mesh(G('meteorDisc', () => new CylinderGeometry(0.95, 0.95, 0.02, 32)), basic(0xff2244, { transparent: true, opacity: 0.25, depthWrite: false }));
+  disc.position.y = 0.03;
+  const rock = new Group();
+  const core = new Mesh(G('meteorRock', () => new IcosahedronGeometry(0.55, 0)), lambert(0x5a2a10, 0xff4400));
+  const fire = glow(0xff8a3d, 2.4);
+  rock.add(fire, core);
+  g.add(disc, ring, rock);
+  g.userData = { ring, disc, rock };
+  return g;
+}
+
 function crate() {
   const s = GAME3D.ENEMIES.crate;
   const g = new Group();
@@ -130,6 +191,78 @@ function crate() {
 }
 
 // --------------------------------------------------------------- enemies
+
+/** Ram: squat armored bot on wheels with a horn; flashes red before charging. */
+function charger() {
+  const s = GAME3D.ENEMIES.charger;
+  const g = new Group();
+  const armor = lambert(0x4a2a2a, 0x1a0505);
+  const body = new Mesh(box(s.w, s.h * 0.62, s.d), armor);
+  body.position.y = s.h * 0.5;
+  const plate = new Mesh(box(s.w * 0.9, s.h * 0.5, 0.12), lambert(0x6a3a3a, 0x220808));
+  plate.position.set(0, s.h * 0.5, -s.d / 2 - 0.05);
+  const horn = new Mesh(G('ramHorn', () => new ConeGeometry(0.22, 0.8, 10)), basic(0xffd23f));
+  horn.rotation.x = -Math.PI / 2;
+  horn.position.set(0, s.h * 0.55, -s.d / 2 - 0.45);
+  const eye = new Mesh(box(0.6, 0.1, 0.05), basic(0xff2244));
+  eye.position.set(0, s.h * 0.78, -s.d / 2 - 0.12);
+  const eyeGlow = glow(0xff2244, 1.0);
+  eyeGlow.position.set(0, s.h * 0.78, -s.d / 2 - 0.2);
+  const wheels = [-1, 1].flatMap((side) =>
+    [-0.4, 0.4].map((z) => {
+      const w = new Mesh(G('ramWheel', () => new CylinderGeometry(0.24, 0.24, 0.18, 12)), lambert(0x15121f, 0x000000));
+      w.rotation.z = Math.PI / 2;
+      w.position.set(side * (s.w / 2), 0.24, z);
+      return w;
+    }),
+  );
+  g.add(body, plate, horn, eye, eyeGlow, ...wheels);
+  g.userData = { flash: [body, plate], eyeGlow, wheels };
+  return g;
+}
+
+/** Turret: armored base, rotating head and barrel aimed down the lane. */
+function turret() {
+  const s = GAME3D.ENEMIES.turret;
+  const g = new Group();
+  const base = new Mesh(G('turretBase', () => new CylinderGeometry(0.55, 0.65, 0.6, 12)), lambert(0x2c2a44, 0x0a0816));
+  base.position.y = 0.3;
+  const head = new Group();
+  head.position.y = 0.95;
+  const dome = new Mesh(box(0.8, 0.5, 0.8), lambert(0x3a3555, 0x100820));
+  const barrel = new Mesh(G('turretBarrel', () => new CylinderGeometry(0.1, 0.12, 0.8, 10)), lambert(0x15121f, 0x220000));
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.z = -0.6;
+  const light = glow(0xff8a3d, 0.8);
+  light.position.set(0, 0.32, 0);
+  head.add(dome, barrel, light);
+  const top = new Mesh(box(0.2, 0.2, 0.2), basic(0xff8a3d));
+  top.position.y = s.h;
+  g.add(base, head, top);
+  g.userData = { head, light, flash: [dome] };
+  return g;
+}
+
+/** Bomber: flying wing with two thrusters and a blinking bomb bay. */
+function bomber() {
+  const g = new Group();
+  const wing = new Mesh(box(1.7, 0.14, 0.9), lambert(0x2a3048, 0x0a0c18));
+  wing.position.y = 0.5;
+  const hull = new Mesh(box(0.6, 0.35, 1.2), lambert(0x3a4060, 0x0c1020));
+  hull.position.y = 0.55;
+  const cockpit = new Mesh(box(0.4, 0.16, 0.3), basic(0x7ff3ff));
+  cockpit.position.set(0, 0.75, -0.4);
+  const thrusters = [-0.75, 0.75].map((x) => {
+    const t = glow(0x3fd0ff, 0.9);
+    t.position.set(x, 0.5, 0.5);
+    return t;
+  });
+  const bay = glow(0xff2244, 0.8);
+  bay.position.y = 0.3;
+  g.add(wing, hull, cockpit, bay, ...thrusters);
+  g.userData = { bay, thrusters, flash: [hull, wing] };
+  return g;
+}
 
 function walker() {
   const g = new Group();
@@ -264,9 +397,46 @@ function boss(kindId = 'mothership') {
       g.add(horn);
     }
   }
+  if (kind.id === 'kraken') {
+    // Mechanical tentacles hanging below the hull.
+    const segGeo = G('krakenSeg', () => new SphereGeometry(0.3, 10, 8));
+    const tentacles = [];
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const t = new Group();
+      t.position.set(Math.cos(a) * 2.1, s.h * 0.32, Math.sin(a) * 1.4);
+      t.rotation.z = -Math.cos(a) * 0.5;
+      for (let k = 0; k < 4; k++) {
+        const seg = new Mesh(segGeo, k === 3 ? accent : hullMat);
+        seg.position.set(Math.cos(a) * k * 0.12, -k * 0.28, 0);
+        seg.scale.setScalar(1 - k * 0.14);
+        t.add(seg);
+      }
+      const tip = glow(kind.core, 0.9);
+      tip.position.set(Math.cos(a) * 0.4, -0.95, 0);
+      t.add(tip);
+      tentacles.push(t);
+      g.add(t);
+    }
+    g.userData.tentacles = tentacles;
+  } else if (kind.id === 'core') {
+    // A glowing core inside two tilted orbiting rings.
+    const orbit = [0.6, -0.6].map((tilt) => {
+      const r = new Mesh(G('coreOrbit', () => new TorusGeometry(2.0, 0.07, 6, 40)), accent);
+      r.position.y = s.h * 0.6;
+      r.rotation.set(Math.PI / 2 + tilt, 0, 0);
+      g.add(r);
+      return r;
+    });
+    const cube = new Mesh(box(0.9, 0.9, 0.9), basic(kind.core));
+    cube.position.y = s.h * 0.62;
+    g.add(cube);
+    g.userData.orbit = orbit;
+    g.userData.cube = cube;
+  }
   // Drawn larger than its hitbox so it looks imposing from the chase camera.
   g.scale.setScalar(1.6);
-  g.userData = { ring, lights, flash: [hull] };
+  g.userData = { ...g.userData, ring, lights, flash: [hull] };
   return g;
 }
 
@@ -325,7 +495,7 @@ function gem() {
   return g;
 }
 
-const POWERUP_COLORS = { shield: 0x39ff88, magnet: 0xff3860, rapid: 0xff8a3d, heart: 0xff5ad9, double: 0xffd23f };
+const POWERUP_COLORS = { shield: 0x39ff88, magnet: 0xff3860, rapid: 0xff8a3d, heart: 0xff5ad9, double: 0xffd23f, jetpack: 0x7ff3ff };
 
 function powerup(type) {
   const g = new Group();
@@ -385,6 +555,18 @@ export function buildEntity(e, theme) {
       return boss(e.bossKind);
     case 'mine':
       return mine();
+    case 'charger':
+      return charger();
+    case 'turret':
+      return turret();
+    case 'bomber':
+      return bomber();
+    case 'slider':
+      return slider();
+    case 'gap':
+      return gap(e.d);
+    case 'meteor':
+      return meteor();
     case 'coin':
       return coin();
     case 'gem':
@@ -399,6 +581,7 @@ export function poolKey(e, theme) {
   if (e.type === 'platform') return `platform_${e.d}_${theme.id}`;
   if (e.type === 'wall') return `wall_${theme.id}`;
   if (e.type === 'boss') return `boss_${e.bossKind}`;
+  if (e.type === 'gap') return `gap_${e.d}`;
   return e.type;
 }
 

@@ -159,6 +159,142 @@ function drawPowerupBadges(scene) {
     ctx.textBaseline = 'middle';
     ctx.fillText('x2', c, c + 1);
   });
+  badge('jetpack', '#7ff3ff', (ctx, c) => {
+    for (const x of [c - 8, c + 8]) {
+      ctx.fillRect(x - 5, c - 14, 10, 18);
+      ctx.beginPath();
+      ctx.moveTo(x - 5, c + 6);
+      ctx.lineTo(x, c + 17);
+      ctx.lineTo(x + 5, c + 6);
+      ctx.fill();
+    }
+  });
+
+  // Perks (shown in the HUD and on the choice cards).
+  const star = (ctx, c, points, outer, inner) => {
+    ctx.beginPath();
+    for (let i = 0; i < points * 2; i++) {
+      const r = i % 2 ? inner : outer;
+      const a = (i / (points * 2)) * Math.PI * 2 - Math.PI / 2;
+      ctx.lineTo(c + Math.cos(a) * r, c + Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fill();
+  };
+  const text = (ctx, c, label, size) => {
+    ctx.font = `bold ${size}px Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, c, c + 1);
+  };
+  const PERK_GLYPHS = {
+    heart: ['#ff3860', (ctx, c) => {
+      ctx.beginPath();
+      ctx.moveTo(c, c + 14);
+      ctx.bezierCurveTo(c - 20, c, c - 12, c - 18, c, c - 8);
+      ctx.bezierCurveTo(c + 12, c - 18, c + 20, c, c, c + 14);
+      ctx.fill();
+    }],
+    damage: ['#ff8a3d', (ctx, c) => star(ctx, c, 8, 18, 8)],
+    fireRate: ['#ffd23f', (ctx, c) => {
+      ctx.lineWidth = 5;
+      for (const dx of [-10, 0, 10]) {
+        ctx.beginPath();
+        ctx.moveTo(c + dx - 5, c - 10);
+        ctx.lineTo(c + dx + 4, c);
+        ctx.lineTo(c + dx - 5, c + 10);
+        ctx.stroke();
+      }
+    }],
+    pierce: ['#ff2bd6', (ctx, c) => {
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(c + 4, c, 9, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(c - 18, c);
+      ctx.lineTo(c + 18, c);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(c + 18, c);
+      ctx.lineTo(c + 10, c - 6);
+      ctx.lineTo(c + 10, c + 6);
+      ctx.fill();
+    }],
+    multishot: ['#39ff88', (ctx, c) => {
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      for (const dy of [-12, 0, 12]) {
+        ctx.moveTo(c - 14, c);
+        ctx.lineTo(c + 14, c + dy);
+      }
+      ctx.stroke();
+    }],
+    magnet: ['#ff5a5a', (ctx, c) => {
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.arc(c, c - 2, 10, Math.PI, 0);
+      ctx.moveTo(c - 10, c - 2);
+      ctx.lineTo(c - 10, c + 10);
+      ctx.moveTo(c + 10, c - 2);
+      ctx.lineTo(c + 10, c + 10);
+      ctx.stroke();
+    }],
+    shieldRegen: ['#39ff88', (ctx, c) => {
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(c, c - 15);
+      ctx.lineTo(c + 12, c - 9);
+      ctx.quadraticCurveTo(c + 11, c + 9, c, c + 15);
+      ctx.quadraticCurveTo(c - 11, c + 9, c - 12, c - 9);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(c, c + 1, 5, 0.3, Math.PI * 1.7);
+      ctx.stroke();
+    }],
+    coins: ['#ffd23f', (ctx, c) => {
+      ctx.lineWidth = 4;
+      for (const dx of [-6, 6]) {
+        ctx.beginPath();
+        ctx.arc(c + dx, c, 10, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }],
+    explosive: ['#ff6a00', (ctx, c) => {
+      ctx.beginPath();
+      ctx.arc(c - 2, c + 3, 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(c + 5, c - 6);
+      ctx.quadraticCurveTo(c + 10, c - 14, c + 16, c - 12);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(c + 16, c - 12, 3.5, 0, Math.PI * 2); // spark
+      ctx.fill();
+    }],
+    combo: ['#ffb347', (ctx, c) => text(ctx, c, 'x12', 19)],
+    slowmo: ['#7ff3ff', (ctx, c) => {
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(c, c, 15, 0, Math.PI * 2);
+      ctx.moveTo(c, c);
+      ctx.lineTo(c, c - 10);
+      ctx.moveTo(c, c);
+      ctx.lineTo(c + 8, c + 4);
+      ctx.stroke();
+    }],
+    vampire: ['#e04dff', (ctx, c) => {
+      ctx.beginPath();
+      ctx.moveTo(c, c - 17);
+      ctx.bezierCurveTo(c + 14, c - 2, c + 14, c + 15, c, c + 15);
+      ctx.bezierCurveTo(c - 14, c + 15, c - 14, c - 2, c, c - 17);
+      ctx.fill();
+    }],
+    lucky: ['#9d4dff', (ctx, c) => star(ctx, c, 5, 17, 7)],
+  };
+  for (const [id, [color, draw]] of Object.entries(PERK_GLYPHS)) badge(`perk_${id}`, color, draw);
 }
 
 function drawHearts(scene) {

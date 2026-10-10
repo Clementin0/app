@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { xpToNext } from '../logic/Progression.js';
 import { fmt, t } from '../i18n.js';
 import { services } from '../services/services.js';
 import { Button } from '../ui/Button.js';
@@ -30,6 +31,13 @@ export class GameOverScene extends Phaser.Scene {
       kills: 0,
       zone: 1,
       missions: [],
+      mode: 'endless',
+      bosses: 0,
+      xp: 0,
+      level: 1,
+      levelXp: 0,
+      levelsUp: [],
+      challengeReward: null,
       ...data,
     };
     this.busy = false;
@@ -47,9 +55,11 @@ export class GameOverScene extends Phaser.Scene {
 
     // Offer the revive unless ads are known to be unavailable (init failed / no consent).
     const canContinue = r.canRevive && !ads.initFailed && !(ads.initialized && !ads.canRequestAds);
-    // Completed missions get their own line at the bottom of the panel.
-    const missionLine = r.missions.length ? 54 : 0;
-    const panelH = (canContinue ? 560 : 450) + missionLine;
+    // Notices (level up, challenge, missions) get their own line at the bottom.
+    this.notices = this._notices(r);
+    const missionLine = this.notices.length ? 54 : 0;
+    const XP_ROW = 52;
+    const panelH = (canContinue ? 560 : 450) + missionLine + XP_ROW;
     this.panelH = panelH;
 
     const bg = this.add.graphics();
@@ -69,13 +79,24 @@ export class GameOverScene extends Phaser.Scene {
     const gemText = this.add.text(-86, 278, `+${r.gems}`, textStyle(30, '#7ff3ff')).setOrigin(0, 0.5);
     const killIcon = this.add.image(40, 278, 'icon_target').setScale(0.55).setTint(COLORS.red);
     const killText = this.add.text(66, 278, String(r.kills ?? 0), textStyle(30, '#ff9ab0')).setOrigin(0, 0.5);
-    const zoneText = this.add.text(PANEL_W / 2 - 60, 278, `${t('zoneReached')} ${r.zone ?? 1}`, textStyle(30, '#c9b8ff')).setOrigin(1, 0.5);
+    const zoneLabel = r.mode === 'bossRush' ? t('bossesBeaten', { n: r.bosses }) : `${t('zoneReached')} ${r.zone ?? 1}`;
+    const zoneText = this.add.text(PANEL_W / 2 - 60, 278, zoneLabel, textStyle(30, '#c9b8ff')).setOrigin(1, 0.5);
 
-    this.panel.add([bg, title, this.scoreText, best, dist, coinIcon, coinText, gemIcon, gemText, killIcon, killText, zoneText]);
+    // XP of the run and the level bar.
+    const xpY = 328;
+    const lvText = glow(this.add.text(-PANEL_W / 2 + 60, xpY, t('level', { n: r.level }), textStyle(28, '#7ffcff')).setOrigin(0, 0.5), COLORS.cyan, 8);
+    const xpBar = this.add.graphics();
+    const bx = -PANEL_W / 2 + 175;
+    const bw = 330;
+    xpBar.fillStyle(0x2a1d55, 1).fillRoundedRect(bx, xpY - 8, bw, 16, 8);
+    xpBar.fillStyle(COLORS.cyan, 1).fillRoundedRect(bx, xpY - 8, Math.max(12, (bw * r.levelXp) / xpToNext(r.level)), 16, 8);
+    const xpText = this.add.text(PANEL_W / 2 - 60, xpY, t('xpGain', { n: fmt(r.xp) }), textStyle(26, '#7ffcff')).setOrigin(1, 0.5);
 
-    const rowY = canContinue ? 476 : 370;
+    this.panel.add([bg, title, this.scoreText, best, dist, coinIcon, coinText, gemIcon, gemText, killIcon, killText, zoneText, lvText, xpBar, xpText]);
+
+    const rowY = (canContinue ? 476 : 370) + XP_ROW;
     if (canContinue) {
-      this.continueButton = new Button(this, 0, 362, {
+      this.continueButton = new Button(this, 0, 362 + XP_ROW, {
         label: t('continue'),
         sublabel: t('watchVideo'),
         icon: 'icon_video',
@@ -123,16 +144,24 @@ export class GameOverScene extends Phaser.Scene {
 
     bindLayout(this, (w, h) => this.layout(w, h));
 
-    // Missions completed in this run, shown one after the other.
-    r.missions.forEach((m, i) => {
+    // Notices, shown one after the other.
+    this.notices.forEach((text, i) => {
       this.time.delayedCall(700 + i * 2300, () => {
-        const reward = [m.reward.coins ? `+${m.reward.coins} ${t('coins')}` : '', m.reward.gems ? `+${m.reward.gems} ${t('gems')}` : ''].filter(Boolean).join('  ');
         services.sfx.play('levelUp');
-        this.missionText.setText(`${t('missionDone')}  ${t(`mission_${m.id}`, { n: m.target })}  ${reward}`);
+        this.missionText.setText(text);
         this.missionText.setScale(Math.min(1, (PANEL_W - 60) / this.missionText.width));
         this.tweens.add({ targets: this.missionText, alpha: { from: 0, to: 1 }, duration: 250 });
       });
     });
+  }
+
+  _notices(r) {
+    const reward = (x) => [x.coins ? `+${x.coins} ${t('coins')}` : '', x.gems ? `+${x.gems} ${t('gems')}` : ''].filter(Boolean).join('  ');
+    const out = [];
+    if (r.challengeReward) out.push(`${t('challengeWon')}  ${reward(r.challengeReward)}`);
+    for (const l of r.levelsUp) out.push(`${t('levelUp', { n: l.level })}  ${reward(l.reward)}`);
+    for (const m of r.missions) out.push(`${t('missionDone')}  ${t(`mission_${m.id}`, { n: m.target })}  ${reward(m.reward)}`);
+    return out;
   }
 
   layout(width, height) {
@@ -188,8 +217,9 @@ export class GameOverScene extends Phaser.Scene {
     this.scene.get('Game')?.finalizeRun?.();
     await ads.registerCompletedGame();
     if (target === 'Game') ads.hideBanner();
+    const mode = this.result.mode ?? 'endless';
     this.scene.stop('Game');
-    this.scene.start(target);
+    this.scene.start(target, target === 'Game' ? { mode } : undefined);
   }
 
   handleBack() {

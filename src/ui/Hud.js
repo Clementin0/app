@@ -1,4 +1,5 @@
 import { BOSS_KINDS } from '../config/game3d.config.js';
+import { PERKS } from '../config/perks.js';
 import { zoneTheme } from '../config/zones.js';
 import { fmt, t } from '../i18n.js';
 import { Button, IconButton } from './Button.js';
@@ -10,7 +11,9 @@ const POWERUPS = [
   { key: 'magnet', color: COLORS.red, max: 18 },
   { key: 'rapid', color: COLORS.orange, max: 7 },
   { key: 'double', color: COLORS.yellow, max: 10 },
+  { key: 'jetpack', color: COLORS.cyan, max: 7 },
 ];
+const EVENT_COLORS = { goldRush: COLORS.yellow, meteors: COLORS.orange, ambush: COLORS.red };
 
 /**
  * In-game HUD drawn by Phaser over the 3D view: score, best, hearts, coins,
@@ -63,6 +66,18 @@ export class Hud {
     this.skipButton = new Button(scene, 0, 0, { label: t('tutSkip'), width: 220, height: 52, fontSize: 19, color: COLORS.panelEdge, onClick: () => onSkipTutorial?.() });
     this.skipButton.setDepth(DEPTH + 2).setVisible(false);
     this.vignette = scene.add.image(0, 0, 'vignette').setOrigin(0).setDepth(DEPTH - 1).setAlpha(0);
+    // Mode label (daily challenge / boss rush) under the score panel.
+    this.modeLabel = scene.add.text(0, 0, '', textStyle(17, '#ffd23f', { strokeThickness: 4 })).setDepth(DEPTH + 1).setVisible(false);
+    // Event in progress: name and time left under the wallet.
+    this.eventLabel = scene.add.text(0, 0, '', textStyle(18, '#ffd23f', { strokeThickness: 4 })).setOrigin(0.5).setDepth(DEPTH + 1).setVisible(false);
+    this.eventBar = scene.add.graphics().setDepth(DEPTH);
+    // Active perks: small badges with their level, bottom-left.
+    this.perkIcons = PERKS.map((p) => ({
+      id: p.id,
+      icon: scene.add.image(0, 0, `perk_${p.id}`).setScale(0.62).setDepth(DEPTH + 1).setVisible(false),
+      level: scene.add.text(0, 0, '', textStyle(16, '#ffffff', { strokeThickness: 4 })).setOrigin(0.5).setDepth(DEPTH + 2).setVisible(false),
+    }));
+    this.lastPerks = '';
     // Reused "+points" popups over killed enemies.
     this.popups = Array.from({ length: 8 }, () => scene.add.text(0, 0, '', textStyle(30, '#ffd23f')).setOrigin(0.5).setDepth(DEPTH - 1).setVisible(false));
     this.nextPopup = 0;
@@ -99,7 +114,7 @@ export class Hud {
     this.gemText.setPosition(wx + 198, m + 30);
     this.zoneBarRect = { x: wx + 16, y: m + 66, w: 268 };
 
-    this.powerups.forEach((p, i) => p.icon.setPosition(m + 30 + i * 64, m + 168));
+    this.powerups.forEach((p, i) => p.icon.setPosition(m + 30 + i * 64, m + 182));
     this.combo.setPosition(width - m, height * 0.42);
     this.pauseButton.setPosition(width - m - 38, m + 38);
     this.message.setPosition(width / 2, height * 0.32);
@@ -108,6 +123,9 @@ export class Hud {
     this.prompt.setPosition(width / 2, Math.max(150, height * 0.27));
     this.skipButton.setPosition(width - m - 110, m + 112);
     this.vignette.setDisplaySize(width, height);
+    this.modeLabel.setPosition(m + 4, m + 134);
+    this.eventLabel.setPosition(width / 2, m + 84);
+    this.lastPerks = ''; // re-place the perk badges
     this.bossRect = { x: width / 2 - 260, y: m + 104, w: 520 };
     this.bossLabel.setPosition(width / 2, m + 96);
   }
@@ -151,12 +169,43 @@ export class Hud {
       this.lastHp = state.hp;
     }
 
-    // Zone progress bar (towards the boss).
+    // Zone progress bar (towards the boss), or the time left of an event.
     const z = this.zoneBarRect;
     const theme = zoneTheme(state.zone);
     this.zoneBar.clear();
     this.zoneBar.fillStyle(COLORS.ink, 0.7).fillRoundedRect(z.x, z.y, z.w, 8, 4);
-    this.zoneBar.fillStyle(state.boss ? COLORS.pink : theme.line, 1).fillRoundedRect(z.x, z.y, Math.max(8, z.w * (state.boss ? 1 : state.zoneProgress)), 8, 4);
+    const ev = state.event;
+    if (ev) {
+      const color = EVENT_COLORS[ev.type] ?? COLORS.yellow;
+      this.zoneBar.fillStyle(color, 1).fillRoundedRect(z.x, z.y, Math.max(8, z.w * (ev.left / ev.duration)), 8, 4);
+      if (this.eventType !== ev.type) {
+        this.eventType = ev.type;
+        this.eventLabel.setText(t(`event_${ev.type}`).replace('!', '')).setColor(hex(color));
+      }
+      this.eventLabel.setVisible(!state.boss);
+    } else {
+      this.eventType = null;
+      this.eventLabel.setVisible(false);
+      this.zoneBar.fillStyle(state.boss ? COLORS.pink : theme.line, 1).fillRoundedRect(z.x, z.y, Math.max(8, z.w * (state.boss ? 1 : state.zoneProgress)), 8, 4);
+    }
+
+    // Active perks (only re-laid out when they change).
+    const perkKey = JSON.stringify(state.perks ?? {});
+    if (perkKey !== this.lastPerks) {
+      this.lastPerks = perkKey;
+      let i = 0;
+      for (const p of this.perkIcons) {
+        const level = state.perks?.[p.id] ?? 0;
+        p.icon.setVisible(level > 0);
+        p.level.setVisible(level > 1);
+        if (!level) continue;
+        const x = this.margin + 22 + i * 44;
+        const y = this.height - this.margin - 22;
+        p.icon.setPosition(x, y);
+        p.level.setText(String(level)).setPosition(x + 15, y - 15);
+        i += 1;
+      }
+    }
 
     // Power-up timers.
     let slot = 0;
@@ -167,7 +216,7 @@ export class Hud {
       p.bar.clear();
       if (!active) continue;
       const x = this.margin + 30 + slot * 64;
-      const y = this.margin + 168;
+      const y = this.margin + 182;
       p.icon.setPosition(x, y);
       if (p.max) {
         p.bar.fillStyle(COLORS.ink, 0.7).fillRoundedRect(x - 24, y + 28, 48, 7, 3);
@@ -232,6 +281,12 @@ export class Hud {
     this.scene.tweens.add({ targets: [m, this.subMessage], alpha: 0, delay: duration, duration: 300 });
   }
 
+  clearMessage() {
+    this.scene.tweens.killTweensOf([this.message, this.subMessage]);
+    this.message.setAlpha(0);
+    this.subMessage.setAlpha(0);
+  }
+
   /** Shows the gesture for a tutorial step ({ id, hint, gesture }), or hides it with null. */
   showPrompt(step) {
     const id = step?.id ?? null;
@@ -258,6 +313,10 @@ export class Hud {
     else if (step.gesture === 'down') tweens.add({ targets: this.promptArrow, y: 122, duration: 520, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     else if (step.gesture === 'horizontal') tweens.add({ targets: this.promptArrow, scaleX: 1.25, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     else tweens.add({ targets: this.promptRing, scale: 1.35, duration: 450, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+  }
+
+  setModeLabel(text, color = COLORS.yellow) {
+    this.modeLabel.setText(text).setColor(hex(color)).setVisible(!!text);
   }
 
   showSkip(visible) {

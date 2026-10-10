@@ -18,6 +18,8 @@ export const MISSION_POOL = Object.freeze([
   { id: 'scoreRun', stat: 'score', scope: 'run', base: 4000, reward: { coins: 250 } },
   { id: 'comboRun', stat: 'bestCombo', scope: 'run', base: 4, reward: { coins: 150 } },
   { id: 'gemsRun', stat: 'gems', scope: 'run', base: 2, reward: { gems: 2 } },
+  { id: 'chargers', stat: 'chargers', scope: 'total', base: 6, reward: { coins: 180 } },
+  { id: 'events', stat: 'events', scope: 'total', base: 4, reward: { coins: 200 } },
 ]);
 
 const ACTIVE = 3;

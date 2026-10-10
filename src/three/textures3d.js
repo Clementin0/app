@@ -226,6 +226,21 @@ export function powerupIconTexture(type) {
         ctx.bezierCurveTo(110, 22, 118, 70, c, 104);
         ctx.fill();
         break;
+      case 'jetpack':
+        // Two tanks with flames below.
+        for (const x of [c - 22, c + 22]) {
+          ctx.fillRect(x - 14, 22, 28, 56);
+          ctx.beginPath();
+          ctx.arc(x, 22, 14, Math.PI, 0);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.moveTo(x - 12, 84);
+          ctx.lineTo(x, 116);
+          ctx.lineTo(x + 12, 84);
+          ctx.closePath();
+          ctx.fill();
+        }
+        break;
       default:
         ctx.font = 'bold 64px Arial, sans-serif';
         ctx.textAlign = 'center';

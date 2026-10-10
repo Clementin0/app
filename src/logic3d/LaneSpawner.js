@@ -170,6 +170,77 @@ export const PATTERNS3D = [
     },
   },
   {
+    // A barrier gliding from side to side: jump it, or slip past it.
+    key: 'sliders',
+    minLevel: 1,
+    weight: () => 1.6,
+    build: ({ rng, level, speed }) => {
+      // A second one comes after a full jump (land, then jump again).
+      const second = speed * 1.0 + 3;
+      const items = [{ type: 'slider', lane: 1, dz: 0 }];
+      const two = level >= 4 && rng.chance(0.5);
+      if (two) items.push({ type: 'slider', lane: 1, dz: second });
+      items.push(...coinLine(rng.int(0, 2), -6, 3));
+      return { length: two ? second + 1 : 1, items };
+    },
+  },
+  {
+    // Holes in one or two lanes: jump over them (coins show the arc).
+    key: 'chasm',
+    minLevel: 1,
+    weight: () => 1.8,
+    build: ({ rng, speed }) => {
+      const lanes = someLanes(rng, rng.chance(0.5));
+      const items = lanes.map((lane) => ({ type: 'gap', lane, dz: 0 }));
+      items.push(...coinArc(lanes[0], 0, speed));
+      return { length: 4, items };
+    },
+  },
+  {
+    // The whole road falls away: jump!
+    key: 'chasmAll',
+    minLevel: 3,
+    weight: () => 1,
+    build: ({ rng, speed }) => {
+      const items = [0, 1, 2].map((lane) => ({ type: 'gap', lane, dz: 0 }));
+      items.push(...coinArc(rng.int(0, 2), 0, speed));
+      return { length: 4, items };
+    },
+  },
+  {
+    // A ram stops ahead, flashes and charges down its lane: shoot it or move.
+    key: 'ram',
+    minLevel: 2,
+    weight: (l) => 1.3 + l * 0.1,
+    build: ({ rng, level }) => {
+      const lanes = someLanes(rng, level >= 5 && rng.chance(0.4));
+      const items = lanes.map((lane, i) => ({ type: 'charger', lane, dz: i * 7 }));
+      items.push(...coinLine(otherLanes(lanes)[0] ?? 1, 0, 4));
+      return { length: 3, items };
+    },
+  },
+  {
+    // A turret shooting down its lane, guarded by a crate.
+    key: 'turretNest',
+    minLevel: 3,
+    weight: () => 1.3,
+    build: ({ rng }) => {
+      const [a, b, c] = shuffledLanes(rng);
+      return {
+        length: 3,
+        items: [{ type: 'turret', lane: a, dz: 6 }, { type: 'crate', lane: b, dz: 0 }, ...coinLine(c, 0, 4)],
+      };
+    },
+  },
+  {
+    // A bomber hovering ahead, dropping mines on the lanes.
+    key: 'bomberRun',
+    minLevel: 4,
+    weight: () => 1.1,
+    allowed: ({ drones }) => drones < 2,
+    build: ({ rng }) => ({ length: 8, items: [{ type: 'bomber', lane: rng.int(0, 2), dz: 0 }, ...coinLine(rng.int(0, 2), 4, 4)] }),
+  },
+  {
     key: 'ambush',
     minLevel: 4,
     weight: () => 1.3,
@@ -210,6 +281,15 @@ export class LaneSpawner {
     this.count += 1;
     const gap = this.gapRange(speed, level);
     return { key, length: built.length, items: built.items, gapAfter: this.rng.range(gap.min, gap.max) };
+  }
+
+  /** Gold rush event: coins on every lane, a gem now and then, tiny gaps. */
+  goldRush(speed) {
+    const items = [0, 1, 2].flatMap((lane) => coinLine(lane, 0, 7, lane === 1 ? 0.5 : 0.9));
+    if (this.rng.chance(0.5)) items.push({ type: 'gem', lane: this.rng.int(0, 2), dz: 8, y: 1.6 });
+    const pattern = this._finish('goldRush', { length: 6 * COIN_SPACING, items }, speed, 0);
+    pattern.gapAfter = 3;
+    return pattern;
   }
 
   /** Only coins: used while the boss is around and right after a zone change. */

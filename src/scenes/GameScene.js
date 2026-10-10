@@ -3,11 +3,13 @@ import { bossKind } from '../config/game3d.config.js';
 import { zoneTheme } from '../config/zones.js';
 import { loadoutFrom } from '../config/upgrades.js';
 import { t } from '../i18n.js';
+import { xpForRun } from '../logic/Progression.js';
 import { createRng } from '../logic/rng.js';
 import { LaneWorld } from '../logic3d/LaneWorld.js';
 import { Missions } from '../logic3d/Missions.js';
 import { Tutorial } from '../logic3d/Tutorial.js';
 import { AutoQuality, lowerQuality } from '../services/AutoQuality.js';
+import { dailyChallenge } from '../services/DailyChallenge.js';
 import { services } from '../services/services.js';
 import { GameView } from '../three/GameView.js';
 import { Hud } from '../ui/Hud.js';
@@ -15,6 +17,7 @@ import { bindLayout } from '../ui/layout.js';
 import { COLORS } from '../ui/theme.js';
 
 const SWIPE = 42; // game pixels
+const EVENT_COLORS = { goldRush: 0xffd23f, meteors: 0xff6a00, ambush: 0xff3860 };
 const HOLD_TO_FIRE = 0.2; // seconds
 const COUNTDOWN = 3;
 
@@ -38,6 +41,13 @@ const SFX_FOR_EVENT = {
   bossDefeated: 'newBest',
   bossDrop: 'enemyShot',
   bossSummon: 'alarm',
+  eventStart: 'levelUp',
+  meteorImpact: 'explode',
+  chargerCharge: 'alarm',
+  jetpack: 'powerup',
+  heal: 'powerup',
+  shieldRegen: 'powerup',
+  explosion: 'explode',
   zone: 'levelUp',
 };
 
@@ -51,12 +61,17 @@ export class GameScene extends Phaser.Scene {
     super('Game');
   }
 
-  init() {
+  init(data) {
+    // 'endless' (classic), 'daily' (seeded challenge) or 'bossRush'.
+    this.mode = data?.mode ?? 'endless';
     this.countdownTimer = null;
     this.gestures = new Map();
     this.autoQuality = new AutoQuality();
     this.slowMo = 0;
+    this.perkDelay = 0;
     this.popupPoint = { x: 0, y: 0, visible: false };
+    this.levelsUp = [];
+    this.challengeReward = null;
   }
 
   create() {
@@ -66,11 +81,25 @@ export class GameScene extends Phaser.Scene {
 
     const snap = save.snapshot();
     this.phase = 'running';
-    this.startBest = save.highScore;
-    this.committed = { coins: 0, gems: 0, stats: {} };
+    this.committed = { coins: 0, gems: 0, stats: {}, xp: 0 };
     this.completedMissions = [];
 
-    this.world = new LaneWorld({ rng: createRng(Date.now() >>> 0), best: save.highScore, loadout: loadoutFrom(snap) });
+    // Mode setup: the daily challenge has a fixed seed and a twist.
+    let rng = createRng(Date.now() >>> 0);
+    let modifiers = {};
+    this.challenge = null;
+    if (this.mode === 'daily') {
+      this.challenge = dailyChallenge(Date.now());
+      rng = createRng(this.challenge.seed);
+      modifiers = this.challenge.modifier.modifiers;
+      this.startBest = save.challengeStatus().best;
+    } else if (this.mode === 'bossRush') {
+      this.startBest = snap.bossRushBest.score;
+    } else {
+      this.startBest = save.highScore;
+    }
+
+    this.world = new LaneWorld({ rng, best: this.startBest, loadout: loadoutFrom(snap), mode: this.mode, modifiers });
     this.view = stage.setView(new GameView(stage, this.world, { equipped: snap.equipped }));
     this.hud = new Hud(this, { onPause: () => this.pauseGame(), onSkipTutorial: () => this.tutorial?.finish() });
 
@@ -80,9 +109,15 @@ export class GameScene extends Phaser.Scene {
     music.duck(false);
 
     // First run: an interactive tutorial before the real thing.
-    this.tutorial = snap.tutorialDone ? null : new Tutorial(this.world);
+    this.tutorial = snap.tutorialDone || this.mode !== 'endless' ? null : new Tutorial(this.world);
     this.hud.showSkip(!!this.tutorial);
-    if (!this.tutorial) this._showZoneTitle(0, 0);
+    if (this.mode === 'daily') {
+      this.hud.setModeLabel(`${t('modeDaily')} · ${t(`mod_${this.challenge.modifier.id}`)}`, COLORS.yellow);
+      this.hud.showMessage(t('modeDaily'), COLORS.yellow, 1800, 52, t(`mod_${this.challenge.modifier.id}`));
+    } else if (this.mode === 'bossRush') {
+      this.hud.setModeLabel(t('modeBossRush'), COLORS.pink);
+      this.hud.showMessage(t('modeBossRush'), COLORS.pink, 1500, 60);
+    } else if (!this.tutorial) this._showZoneTitle(0, 0);
 
     this._bindInput();
     const onResume = () => this._onResume();
@@ -224,6 +259,7 @@ export class GameScene extends Phaser.Scene {
       meters: Math.floor(w.distance),
       score: w.score.score,
       bestCombo: w.combo.best,
+      zone: w.zone.index,
     };
   }
 
@@ -233,17 +269,25 @@ export class GameScene extends Phaser.Scene {
     const w = this.world;
     const summary = w.score.summary();
     summary.meters = Math.floor(w.distance);
-    save.submitScore(summary.score, summary.meters);
+    // Each mode keeps its own record; the classic high score stays "endless" only.
+    if (this.mode === 'daily') this.challengeReward ??= save.submitChallenge({ score: summary.score, bosses: w.stats.bosses });
+    else if (this.mode === 'bossRush') this.bossRushRecord = save.submitBossRush({ bosses: w.stats.bosses, score: summary.score }) || this.bossRushRecord;
+    else save.submitScore(summary.score, summary.meters);
     save.addCurrency(summary.coins - this.committed.coins, summary.gems - this.committed.gems);
 
     const stats = this.runStats();
+    // XP for what this run added since the last commit (a revive commits twice).
+    const xp = xpForRun(stats);
+    const level = save.addXp(xp - this.committed.xp);
+    this.levelsUp.push(...level.levelsUp);
+    this.committed.xp = xp;
     const missions = new Missions(save.data.missions);
     const done = missions.applyRun(stats, this.committed.stats);
     for (const m of done) save.addCurrency(m.reward.coins, m.reward.gems);
     this.completedMissions.push(...done);
     save.persist();
 
-    this.committed = { coins: summary.coins, gems: summary.gems, stats };
+    this.committed = { coins: summary.coins, gems: summary.gems, stats, xp };
     return summary;
   }
 
@@ -267,16 +311,47 @@ export class GameScene extends Phaser.Scene {
     this._freeze(true);
     services.music.duck(true);
     const summary = this.commitProgress();
+    const s = services.save.snapshot();
     this.scene.launch('GameOver', {
       ...summary,
-      isNewBest: summary.score > this.startBest,
+      best: this.mode === 'endless' ? summary.best : Math.max(summary.score, this.startBest),
+      isNewBest: summary.score > this.startBest && summary.score > 0,
       previousBest: this.startBest,
+      mode: this.mode,
+      bosses: this.world.stats.bosses,
+      xp: this.committed.xp,
+      level: s.level,
+      levelXp: s.xp,
+      levelsUp: this.levelsUp.splice(0),
+      challengeReward: this.challengeReward && !this.challengeShown ? this.challengeReward : null,
       canRevive: this.world.canRevive,
       kills: this.world.stats.kills,
       zone: this.world.zone.index + 1,
       missions: this.completedMissions.splice(0),
     });
+    this.challengeShown = !!this.challengeReward;
     this.scene.pause();
+  }
+
+  // -------------------------------------------------------------- perks
+
+  _offerPerks() {
+    const w = this.world;
+    if (!w.perkOffer) return;
+    this.phase = 'perk';
+    this._freeze(true);
+    this.hud.clearMessage();
+    this.scene.launch('Perk', { options: [...w.perkOffer], levels: { ...w.perks } });
+    this.scene.pause();
+  }
+
+  /** Called by the perk scene with the chosen card. */
+  choosePerk(id) {
+    if (this.phase !== 'perk') return;
+    this.world.choosePerk(id);
+    this.scene.resume();
+    this.hud.update(this.world.hud());
+    this.startCountdown(2);
   }
 
   /** Called by the Game Over scene after a rewarded ad granted the reward. */
@@ -317,6 +392,11 @@ export class GameScene extends Phaser.Scene {
       this._onWorldEvent(e);
     }
     if (this.tutorial) this._updateTutorial();
+    // After a boss: let the explosion play, then ask for a perk.
+    if (this.world.perkOffer && this.phase === 'running') {
+      this.perkDelay -= delta / 1000; // real time, whatever the frame rate
+      if (this.perkDelay <= 0) this._offerPerks();
+    }
     this.hud.update(this.world.hud());
   }
 
@@ -396,6 +476,31 @@ export class GameScene extends Phaser.Scene {
         music.setIntensity(1);
         haptics.success();
         this.hud.showMessage(t('bossDefeated'), COLORS.green, 1600, 60, `+${e.coins}  +${e.gems}`);
+        break;
+      case 'perkOffer':
+        this.perkDelay = 1.4;
+        break;
+      case 'perk':
+        this.hud.showMessage(t(`perk_${e.id}`), COLORS.yellow, 1100, 46, t(`perkDesc_${e.id}`));
+        break;
+      case 'eventStart':
+        haptics.medium();
+        this.hud.showMessage(t(`event_${e.event}`), EVENT_COLORS[e.event] ?? COLORS.yellow, 1800, 54, t(`eventDesc_${e.event}`));
+        break;
+      case 'eventEnd':
+        if (e.event === 'ambush') {
+          if (e.success) {
+            sfx.play('newBest');
+            this.hud.showMessage(t('eventWon'), COLORS.green, 1500, 50, `+${e.reward}`);
+          } else this.hud.showMessage(t('eventLost'), COLORS.purple, 1200, 40);
+        }
+        break;
+      case 'jetpack':
+        haptics.medium();
+        this.hud.showMessage(t('jetpack'), COLORS.cyan, 900, 50);
+        break;
+      case 'meteorImpact':
+        if (e.hit) haptics.medium();
         break;
       case 'bossFled':
         music.setIntensity(1);

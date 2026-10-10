@@ -4,6 +4,7 @@ import { createRng } from '../logic/rng.js';
 import { Autopilot3D } from '../logic3d/Autopilot3D.js';
 import { LaneWorld } from '../logic3d/LaneWorld.js';
 import { Missions } from '../logic3d/Missions.js';
+import { xpToNext } from '../logic/Progression.js';
 import { exitApp } from '../services/Platform.js';
 import { services } from '../services/services.js';
 import { GameView } from '../three/GameView.js';
@@ -57,6 +58,7 @@ export class MenuScene extends Phaser.Scene {
     const shopLabel = this.add.text(-300, 322, t('shop'), textStyle(21, '#ffd9b8')).setOrigin(0.5);
     this.settingsButton = new IconButton(this, 300, 256, { icon: 'icon_gear', size: 94, color: COLORS.purple, onClick: () => this.openSettings() });
     const settingsLabel = this.add.text(300, 322, t('settings'), textStyle(21, '#dccbff')).setOrigin(0.5);
+    this.modesButton = new Button(this, 0, 343, { label: t('modes'), icon: 'icon_trophy', width: 300, height: 52, fontSize: 24, color: COLORS.purple, onClick: () => this.openModes() });
 
     // "!" badge on the shop button when something new is affordable.
     this.shopBadge = this.add.container(-262, 218, [this.add.circle(0, 0, 17, COLORS.red).setStrokeStyle(3, COLORS.white), this.add.text(0, 0, '!', textStyle(24)).setOrigin(0.5)]);
@@ -68,12 +70,19 @@ export class MenuScene extends Phaser.Scene {
     stats.fillStyle(COLORS.ink, 0.65).fillRoundedRect(-DESIGN_W / 2, 372, 330, 230, 24);
     stats.lineStyle(2, COLORS.panelEdge, 0.9).strokeRoundedRect(-DESIGN_W / 2, 372, 330, 230, 24);
     const x0 = -DESIGN_W / 2 + 34;
-    const trophy = this.add.image(x0, 420, 'icon_trophy').setTint(COLORS.yellow).setScale(0.5);
-    const best = this.add.text(x0 + 28, 420, `${t('record')}  ${fmt(s.highScore)}`, textStyle(26, '#ffd23f')).setOrigin(0, 0.5);
-    const coin = this.add.image(x0, 482, 'coin').setScale(0.7);
-    const coins = (this.coinsText = this.add.text(x0 + 28, 482, fmt(s.totalCoins), textStyle(26, '#ffe68a')).setOrigin(0, 0.5));
-    const gem = this.add.image(x0, 544, 'gem').setScale(0.55);
-    const gems = (this.gemsText = this.add.text(x0 + 28, 544, fmt(s.totalGems), textStyle(26, '#9ff6ff')).setOrigin(0, 0.5));
+    // Player level with its XP bar.
+    const levelText = glow(this.add.text(x0 - 10, 404, t('level', { n: s.level }), textStyle(26, '#7ffcff')).setOrigin(0, 0.5), COLORS.cyan, 8);
+    const xpBar = this.add.graphics();
+    const bx = x0 + 86;
+    const bw = 190;
+    xpBar.fillStyle(0x2a1d55, 1).fillRoundedRect(bx, 397, bw, 14, 7);
+    xpBar.fillStyle(COLORS.cyan, 1).fillRoundedRect(bx, 397, Math.max(10, (bw * s.xp) / xpToNext(s.level)), 14, 7);
+    const trophy = this.add.image(x0, 452, 'icon_trophy').setTint(COLORS.yellow).setScale(0.45);
+    const best = this.add.text(x0 + 28, 452, `${t('record')}  ${fmt(s.highScore)}`, textStyle(24, '#ffd23f')).setOrigin(0, 0.5);
+    const coin = this.add.image(x0, 502, 'coin').setScale(0.65);
+    const coins = (this.coinsText = this.add.text(x0 + 28, 502, fmt(s.totalCoins), textStyle(24, '#ffe68a')).setOrigin(0, 0.5));
+    const gem = this.add.image(x0, 552, 'gem').setScale(0.5);
+    const gems = (this.gemsText = this.add.text(x0 + 28, 552, fmt(s.totalGems), textStyle(24, '#9ff6ff')).setOrigin(0, 0.5));
 
     // Missions panel (right).
     const mx = -DESIGN_W / 2 + 350;
@@ -98,7 +107,7 @@ export class MenuScene extends Phaser.Scene {
     });
     save.persist(); // new missions may have been drawn
 
-    this.ui.add([titleNeon, titleDash, tagline, this.playButton, this.shopButton, shopLabel, this.shopBadge, this.settingsButton, settingsLabel, stats, trophy, best, coin, coins, gem, gems, missionsBg, missionsTitle, ...rows]);
+    this.ui.add([titleNeon, titleDash, tagline, this.playButton, this.modesButton, this.shopButton, shopLabel, this.shopBadge, this.settingsButton, settingsLabel, stats, levelText, xpBar, trophy, best, coin, coins, gem, gems, missionsBg, missionsTitle, ...rows]);
 
     this.version = this.add.text(0, 0, `v${APP_VERSION}`, textStyle(18, '#a99bd6', { strokeThickness: 3 })).setOrigin(1, 1).setDepth(70);
     this.tweens.add({ targets: this.titles, y: '-=10', duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
@@ -129,7 +138,7 @@ export class MenuScene extends Phaser.Scene {
     this.version.setPosition(width - 12, avail - 6);
   }
 
-  _leaveTo(target) {
+  _leaveTo(target, data) {
     if (this.starting || this.scene.isActive('Daily')) return;
     this.starting = true;
     services.sfx.unlock();
@@ -137,16 +146,24 @@ export class MenuScene extends Phaser.Scene {
     const go = () => {
       if (this.leaving) return;
       this.leaving = true;
-      this.scene.start(target);
+      this.scene.start(target, data);
     };
     this.cameras.main.fade(220, 7, 2, 26, true);
     this.cameras.main.once('camerafadeoutcomplete', go);
     this.time.delayedCall(450, go);
   }
 
-  startGame() {
+  /** data.mode: 'endless' (default), 'daily' or 'bossRush'. */
+  startGame(data = {}) {
+    if (this.starting || this.scene.isActive('Daily')) return;
     services.ads.hideBanner();
-    this._leaveTo('Game');
+    this._leaveTo('Game', { mode: data.mode ?? 'endless' });
+  }
+
+  openModes() {
+    if (this.starting || this.scene.isActive('Modes') || this.scene.isActive('Daily')) return;
+    services.sfx.unlock();
+    this.scene.launch('Modes');
   }
 
   openShop() {

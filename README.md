@@ -6,8 +6,10 @@ Modelli 3D, texture, effetti sonori e colonna sonora sono generati proceduralmen
 | Menu | Tutorial | Gioco |
 | --- | --- | --- |
 | ![Menu](docs/screenshots/menu.png) | ![Tutorial](docs/screenshots/tutorial.png) | ![Gioco](docs/screenshots/gameplay.png) |
-| **Boss (Scorpione delle dune)** | **Negozio** | **Ricompensa giornaliera** |
-| ![Boss](docs/screenshots/boss.png) | ![Negozio](docs/screenshots/shop.png) | ![Ricompensa giornaliera](docs/screenshots/daily.png) |
+| **Pioggia di meteoriti** | **Boss (Scorpione delle dune)** | **Scelta del potenziamento** |
+| ![Pioggia di meteoriti](docs/screenshots/meteors.png) | ![Boss](docs/screenshots/boss.png) | ![Potenziamenti](docs/screenshots/perks.png) |
+| **Modalità** | **Negozio** | **Ricompensa giornaliera** |
+| ![Modalità](docs/screenshots/modes.png) | ![Negozio](docs/screenshots/shop.png) | ![Ricompensa giornaliera](docs/screenshots/daily.png) |
 | **Game Over** | **Impostazioni** | |
 | ![Game over](docs/screenshots/game-over.png) | ![Impostazioni](docs/screenshots/settings.png) | |
 
@@ -41,21 +43,38 @@ Un solo dito può concatenare direzioni diverse (es. sinistra e poi su), ma uno 
 **Nemici e ostacoli**
 
 - **Robot** che camminano verso di te, **casse** da distruggere, **droni** che si fermano davanti a te, sparano plasma e cambiano corsia. I colpi di plasma si possono abbattere.
-- Ostacoli: barriere da saltare, travi laser da passare scivolando, muri che bloccano la corsia e piattaforme su cui correre.
+- **Arieti**: si fermano davanti a te, lampeggiano e poi caricano lungo la loro corsia. Abbattili prima o spostati.
+- **Torrette** piazzate sulla strada, che sparano plasma lungo la loro corsia.
+- **Bombardieri**: volano davanti a te, cambiano corsia e sganciano mine.
+- Ostacoli: barriere da saltare, travi laser da passare scivolando, muri che bloccano la corsia, piattaforme su cui correre, **barriere mobili** che scorrono da un lato all'altro della strada e **voragini** da saltare (cadere è fatale).
 - Ogni nemico abbattuto dà punti (che compaiono sopra di lui) e lascia cadere monete. Le uccisioni ravvicinate creano una **combo** (fino a ×8).
-- **Boss**: dopo 700 m di ogni zona arriva un boss con nome e barra della vita colorata. Ogni zona ha il suo, con aspetto e attacchi propri:
+- **Eventi** durante la corsa: due per zona, a 280 m e a 600 m, mai lo stesso due volte di fila.
+  - **Corsa all'oro**: monete su tutte le corsie e strada più veloce.
+  - **Imboscata**: la strada rallenta e arrivano tre ondate di nemici; se li abbatti tutti, +30 monete.
+  - **Pioggia di meteoriti** (dalla zona 2): un cerchio rosso segna dove cadrà ogni meteorite; esci dalla corsia prima dell'impatto.
+- **Jetpack** (power-up raro): voli sopra tutto per 7 secondi raccogliendo monete in cielo, e i colpi scendono a colpire i nemici a terra.
+- **Boss**: dopo 900 m di ogni zona arriva un boss con nome e barra della vita colorata. Ogni zona ha il suo, con aspetto e attacchi propri:
 
   | Zona | Boss | Attacchi |
   | --- | --- | --- |
   | 1 | Nave madre | raffiche su due corsie (una resta libera), colpi mirati |
   | 2 | Scorpione delle dune | sgancia **mine** su una o due corsie (da abbattere o saltare), raffiche |
   | 3 | Portaerei glaciale | lancia **droni**, spazzate di colpi corsia dopo corsia |
-  | 4 | Signore infernale | tutto quanto sopra, più veloce |
+  | 4 | Signore infernale | spazzate, mine, droni, raffiche |
+  | 5 | Kraken meccanico | spazzate doppie, mine, raffiche (tentacoli animati) |
+  | 6 | Nucleo IA | **meteoriti**, droni, spazzate, mine: il più completo |
 
-  Se lo abbatti (con un attimo di rallentatore) prendi +40 monete, +3 gemme e un grosso bonus. Se resisti 45 secondi se ne va. Dopo la quarta zona il ciclo ricomincia, più difficile.
-- **4 zone** a tema con colori, musica e scenario diversi: Città Neon, Deserto al tramonto, Griglia di ghiaccio, Inferno. La difficoltà sale a ogni zona.
+  Se lo abbatti (con un attimo di rallentatore) prendi +40 monete, +3 gemme e un grosso bonus. Se resisti 45 secondi se ne va. Dopo la sesta zona il ciclo ricomincia, più difficile.
+- **Potenziamenti a scelta**: dopo ogni boss il gioco si ferma e propone **3 carte a caso** tra 13: cuore extra, calibro (+danno), raffica, colpi perforanti, tripla canna, calamita, scudo rigenerante, fortuna, esplosivi, combo infinita, tempo dilatato, vampiro, portafortuna. Valgono fino alla fine della corsa e alcuni si sommano (ad esempio calibro fino a 4 livelli), quindi ogni partita prende una strada diversa. Quelli attivi compaiono in basso a sinistra.
+- **6 zone** a tema con colori, musica e scenario diversi: Città Neon, Deserto al tramonto, Griglia di ghiaccio, Inferno, Abisso, Orbita. La difficoltà sale a ogni zona.
 - Hai **3 cuori** (5 con i potenziamenti). Nemici e plasma tolgono un cuore; schiantarsi contro un ostacolo è fatale.
-- Power-up: **scudo**, **magnete**, **fuoco rapido**, **punti doppi**, **cuore extra**.
+- Power-up: **scudo**, **magnete**, **fuoco rapido**, **punti doppi**, **cuore extra**, **jetpack**.
+
+**Modalità** (pulsante "MODALITÀ" nel menu)
+
+- **Infinita**: la corsa classica (pulsante GIOCA).
+- **Sfida giornaliera**: stesso percorso per tutti per tutto il giorno, con una regola diversa ogni giorno tra sette: turbo (+20% velocità, punti ×1,5), cristallo (un solo cuore, punti ×2), solo laser, tempesta di meteoriti, febbre dell'oro, caccia ai boss (arrivano prima), agguati. Sconfiggere il primo boss vale **+150 monete e +5 gemme**, una volta al giorno; resta il record del giorno.
+- **Boss Rush**: solo boss, uno dopo l'altro e sempre più forti, con un potenziamento dopo ognuno. Si conserva il record di boss sconfitti.
 
 **Personalizzazione e progressione**
 
@@ -67,16 +86,17 @@ Un solo dito può concatenare direzioni diverse (es. sinistra e poi su), ma uno 
   - **Potenziamenti**: danno, cadenza di fuoco, durata del magnete, cuori extra, scudo iniziale.
 - Si paga in monete; gli oggetti rari costano gemme. Un video con ricompensa dà **+50 monete** ogni 3 minuti.
 - **Ricompensa giornaliera**: al primo accesso di ogni giorno una scala di 7 giorni (da 50 a 250 monete, gemme al 4° e al 7° giorno). Saltare un giorno fa ripartire la serie. Il premio si può **raddoppiare** guardando un video; se il video non arriva alla fine si riceve comunque il premio normale.
-- **Missioni**: 3 obiettivi attivi alla volta (abbattere droni o boss, combo, distanza, monete...). Danno monete o gemme e, una volta completati, vengono sostituiti da missioni più difficili.
+- **Livello del giocatore**: ogni corsa dà esperienza (distanza, nemici, boss, eventi, potenziamenti). Ogni livello regala monete, ogni 5 livelli anche gemme. Il livello con la sua barra è nel menu e nel Game Over.
+- **Missioni**: 3 obiettivi attivi alla volta (abbattere droni, arieti o boss, superare eventi, combo, distanza, monete...). Danno monete o gemme e, una volta completati, vengono sostituiti da missioni più difficili.
 - **Punteggio** = distanza + monete e gemme + bonus di uccisioni e boss. High score, distanza migliore, monete, gemme, oggetti, potenziamenti, missioni, statistiche e impostazioni sono salvati in **LocalStorage**.
 
 **Interfaccia e sistema**
 
 - Gameloop completo:
   - **Menu**, con una corsa demo 3D giocata dall'IA e il pannello delle missioni;
-  - **Gioco**, con HUD per punti, cuori, monete, avanzamento della zona, power-up, combo, barra del boss e pausa;
+  - **Gioco**, con HUD per punti, cuori, monete, avanzamento della zona (o tempo dell'evento), power-up, potenziamenti attivi, combo, barra del boss e pausa;
   - **Pausa**: riprendi con conto alla rovescia, ricomincia, menu, impostazioni;
-  - **Game Over**: riepilogo con uccisioni e zona raggiunta, missioni completate, **Continua**, **Rigioca**, **Menu**.
+  - **Game Over**: riepilogo con uccisioni, zona raggiunta (o boss sconfitti), esperienza guadagnata e barra del livello, avvisi per livelli, missioni e sfide completate, **Continua**, **Rigioca** (nella stessa modalità), **Menu**.
 - **Impostazioni**: musica, effetti sonori, vibrazione, lingua, **qualità grafica** (bassa, media, alta: risoluzione, antialiasing, densità della città, particelle) e, se richiesto dal GDPR, consenso privacy.
 - **Grafica automatica**: finché il giocatore non sceglie un livello, il gioco misura i frame al secondo durante la partita e, se il telefono scende sotto i 42 fps, abbassa da solo la qualità di un livello. Nelle impostazioni compare la scritta "AUTOMATICA".
 - **Audio** sintetizzato in tempo reale: ogni zona ha la sua progressione di accordi e la musica si intensifica durante il boss. **Vibrazione** (Capacitor Haptics) su colpi, danni, boss e acquisti.
@@ -107,25 +127,28 @@ Dettagli di implementazione ([`src/services/AdService.js`](src/services/AdServic
 ```
 src/
   config/admob.config.js    ID AdMob (test/produzione) e regole di frequenza
-  config/game3d.config.js   corsie, fisica, velocità, armi, nemici, boss, punteggi, power-up
-  config/zones.js           temi delle 4 zone (colori, scenario, musica)
+  config/game3d.config.js   corsie, fisica, velocità, armi, nemici, ostacoli, boss, eventi, jetpack, punteggi
+  config/zones.js           temi delle 6 zone (colori, scenario, musica)
+  config/perks.js           i 13 potenziamenti a scelta dopo i boss
   config/cosmetics.js       catalogo del negozio: skin, cappelli, armi, scie
   config/upgrades.js        potenziamenti e loadout della partita
   i18n.js                   testi in italiano e inglese
   logic3d/                  simulazione pura (testabile in Node, senza Phaser né Three.js)
-    LaneWorld.js            corsie, salto/scivolata, spari, nemici, boss, zone, danni, pickup, revive
+    LaneWorld.js            corsie, salto/scivolata, spari, nemici, boss, zone, eventi, jetpack,
+                            potenziamenti, modalità, danni, pickup, revive
     LaneSpawner.js          pattern di ostacoli, nemici e monete
     Autopilot3D.js          IA per la demo del menu e i test
     Missions.js             missioni con ricompense e livelli crescenti
     Tutorial.js             tutorial interattivo della prima partita (tempo che si ferma, gesti)
   logic/ScoreManager.js     punteggio della partita
+  logic/Progression.js      esperienza e livelli del giocatore
   three/                    rendering 3D: Stage (renderer e qualità), Environment (strada, città, cielo),
                             models (ostacoli, nemici, boss, pickup), Character, Particles,
                             GameView (partita e demo), PreviewView (anteprima del negozio)
   services/                 AdService, MockAdMob, SaveData (LocalStorage), Sfx e Music (Web Audio),
                             Haptics, Platform (tasto indietro, background), DailyReward,
-                            AutoQuality (qualità grafica adattiva)
-  scenes/                   Boot, Menu, Daily, Shop, Game, Pause, GameOver, Settings (interfaccia Phaser)
+                            AutoQuality (qualità grafica adattiva), DailyChallenge (sfida del giorno)
+  scenes/                   Boot, Menu, Daily, Modes, Shop, Game, Perk, Pause, GameOver, Settings (interfaccia Phaser)
   ui/                       texture procedurali dell'interfaccia, bottoni, interruttori, HUD
 tests/                      test unitari Vitest
 scripts/
@@ -156,9 +179,10 @@ npm run release:check  # controlla che la release non usi gli ID AdMob di test
 - banner nel menu, nascosto in gioco;
 - tutorial completo: il tempo si ferma davanti al muro, poi cambio corsia, salto e scivolata con gli swipe, robot abbattuto tenendo premuto;
 - uno swipe lungo sposta di una sola corsia; sparo con tocco e fuoco automatico; uccisione di un nemico;
-- arrivo del boss, sua sconfitta con ricompensa e passaggio alla zona 2;
+- arrivo del boss, sua sconfitta con ricompensa, scelta di un potenziamento (la corsa aspetta) e passaggio alla zona 2;
 - pausa e ripresa;
-- high score, missioni e statistiche in LocalStorage;
+- high score, missioni, esperienza e statistiche in LocalStorage;
+- sfida giornaliera (percorso fisso e regola del giorno, record salvato) e Boss Rush (boss subito, niente ostacoli);
 - revive con video, una sola seconda possibilità per partita, interstitial alla terza partita completata;
 - impostazioni: vibrazione, qualità grafica, lingua;
 - negozio: anteprima 3D, acquisto di skin e potenziamento, +50 monete con video, skin e danno applicati in partita;
@@ -175,7 +199,7 @@ npm run cap:sync
 cd android && ./gradlew assembleDebug     # APK in android/app/build/outputs/apk/debug/
 ```
 
-`versionName` e `versionCode` vengono dal campo `version` di `package.json` (2.1.0 → versionCode 20100).
+`versionName` e `versionCode` vengono dal campo `version` di `package.json` (3.0.0 → versionCode 30000).
 
 Le build di debug sono firmate con `android/debug.keystore`, una chiave di debug inclusa nel repository (come quella che Android Studio crea in locale, non è un segreto). Così tutti gli APK prodotti dalla GitHub Action hanno la stessa firma: una nuova versione si installa sopra la precedente e **i salvataggi restano**. Le release usano invece la chiave privata di `keystore.properties`.
 

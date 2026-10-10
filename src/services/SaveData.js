@@ -1,6 +1,8 @@
 import { CATALOG, currencyOf, DEFAULT_EQUIPPED, FREE_COINS, getItem } from '../config/cosmetics.js';
 import { getUpgrade, nextCost, UPGRADES } from '../config/upgrades.js';
 import { emptyMissionsState } from '../logic3d/Missions.js';
+import { addXp } from '../logic/Progression.js';
+import { CHALLENGE_REWARD } from './DailyChallenge.js';
 import { dailyStatus, dayNumber, emptyDailyState } from './DailyReward.js';
 
 /**
@@ -35,6 +37,10 @@ function defaults() {
     lastFreeCoinsAt: 0,
     tutorialDone: false,
     daily: emptyDailyState(),
+    level: 1,
+    xp: 0,
+    challenge: { day: -1, best: 0, done: false },
+    bossRushBest: { bosses: 0, score: 0 },
   };
 }
 
@@ -122,6 +128,10 @@ export class SaveData {
       // Players of earlier versions already know the controls.
       tutorialDone: toBool(p.tutorialDone, toCount(p.gamesPlayed) > 0),
       daily: { lastDay: Number.isInteger(p.daily?.lastDay) ? p.daily.lastDay : -1, streak: toCount(p.daily?.streak) },
+      level: Math.max(1, toCount(p.level)),
+      xp: toCount(p.xp),
+      challenge: { day: Number.isInteger(p.challenge?.day) ? p.challenge.day : -1, best: toCount(p.challenge?.best), done: p.challenge?.done === true },
+      bossRushBest: { bosses: toCount(p.bossRushBest?.bosses), score: toCount(p.bossRushBest?.score) },
     };
   }
 
@@ -217,6 +227,55 @@ export class SaveData {
     this.data.totalGems += granted.gems;
     this.persist();
     return granted;
+  }
+
+  // ------------------------------------------------------ player level
+
+  /** Adds XP; level-up rewards go straight to the wallet. */
+  addXp(amount) {
+    const result = addXp(this.data, amount);
+    this.data.level = result.level;
+    this.data.xp = result.xp;
+    for (const l of result.levelsUp) {
+      this.data.totalCoins += l.reward.coins;
+      this.data.totalGems += l.reward.gems;
+    }
+    this.persist();
+    return result;
+  }
+
+  // ------------------------------------------------- challenge & modes
+
+  challengeStatus() {
+    const c = this.data.challenge;
+    const today = dayNumber(this.now());
+    return c.day === today ? { best: c.best, done: c.done } : { best: 0, done: false };
+  }
+
+  /** Records a daily challenge run; returns the reward the first time a boss falls today. */
+  submitChallenge({ score = 0, bosses = 0 } = {}) {
+    const today = dayNumber(this.now());
+    if (this.data.challenge.day !== today) this.data.challenge = { day: today, best: 0, done: false };
+    const c = this.data.challenge;
+    c.best = Math.max(c.best, toCount(score));
+    let reward = null;
+    if (!c.done && bosses >= 1) {
+      c.done = true;
+      reward = { ...CHALLENGE_REWARD };
+      this.data.totalCoins += reward.coins;
+      this.data.totalGems += reward.gems;
+    }
+    this.persist();
+    return reward;
+  }
+
+  /** Boss rush record (bosses first, then score). Returns true for a new record. */
+  submitBossRush({ bosses = 0, score = 0 } = {}) {
+    const best = this.data.bossRushBest;
+    const better = bosses > best.bosses || (bosses === best.bosses && score > best.score);
+    if (better) this.data.bossRushBest = { bosses: toCount(bosses), score: toCount(score) };
+    this.persist();
+    return better;
   }
 
   completeTutorial() {

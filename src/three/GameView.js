@@ -5,6 +5,9 @@ import { animateCharacter, buildCharacter } from './Character.js';
 import { buildEntity, enemyShot, flash, playerShot, poolKey } from './models.js';
 import { Particles } from './Particles.js';
 
+const JET_FLAME = [0xff8a3d, 0xffd23f];
+const DRAW_DISTANCE = 100; // ~75% into the fog (Environment: 30..125 m)
+
 /** Logic x grows to the right of the screen; the camera looks +z, so mirror it. */
 const X = (x) => -x;
 
@@ -171,6 +174,32 @@ export class GameView {
         case 'bossSweep':
           this.addShake(0.25);
           break;
+        case 'meteorImpact':
+          ps.burst(X(e.x), 0.4, e.z, [0xff8a3d, 0xffd23f, 0xff3860, 0xffffff], 40, 9, 0.8, { up: 4 });
+          this.addShake(e.hit ? 0.6 : 0.25);
+          break;
+        case 'bomberDrop':
+          ps.burst(X(e.x), e.y + 0.2, e.z - 1, [0xff2244, 0xffd23f], 8, 2.5, 0.35);
+          break;
+        case 'chargerCharge':
+          this.addShake(0.12);
+          break;
+        case 'explosion':
+          ps.burst(X(e.x), e.y, e.z, [0xff6a00, 0xffd23f, 0xffffff], 36, 9, 0.6);
+          this.addShake(0.2);
+          break;
+        case 'jetpack':
+          ps.burst(px, 0.4, 0, [0xff8a3d, 0xffd23f, 0xffffff], 30, 6, 0.6);
+          break;
+        case 'shieldRegen':
+          ps.burst(px, 1, 0.3, [0x39ff88, 0xffffff], 24, 5, 0.5);
+          break;
+        case 'heal':
+          ps.burst(px, 1.2, 0.3, [0xff5ad9, 0xffffff], 20, 4, 0.5, { up: 2 });
+          break;
+        case 'eventStart':
+          this.addShake(0.15);
+          break;
         default:
           break;
       }
@@ -213,6 +242,13 @@ export class GameView {
       c.visible = p.invulnerable > 0 ? Math.floor(this.time * 14) % 2 === 0 : true;
     }
     c.userData.muzzle.visible = this.muzzleTimer > 0;
+    // Jetpack: visible only while flying, with flickering flames.
+    const flying = p.jetpack > 0 && w.state !== 'dead';
+    c.userData.jetpack.visible = flying;
+    if (flying) {
+      for (const f of c.userData.flames) f.scale.setScalar(0.6 + Math.random() * 0.4);
+      if (!this.frozen && Math.random() < dt * 40) this.particles.burst(X(p.x) + (Math.random() < 0.5 ? -0.18 : 0.18), p.y + 0.45, -0.6, JET_FLAME, 1, 1.5, 0.35);
+    }
     this.muzzleTimer = Math.max(0, this.muzzleTimer - dt);
 
     this.shieldBubble.visible = p.shield && w.state !== 'dead';
@@ -256,7 +292,9 @@ export class GameView {
       }
       obj.userData.stamp = stamp;
       obj.position.set(X(e.x), e.y, e.z);
-      this._animateEntity(e, obj, dt);
+      // Far away (in the fog) nothing is drawn: saves draw calls on dense rows.
+      obj.visible = e.z < DRAW_DISTANCE;
+      if (obj.visible) this._animateEntity(e, obj, dt);
     }
     for (const [id, obj] of this.meshes) {
       if (obj.userData.stamp !== stamp) {
@@ -284,8 +322,14 @@ export class GameView {
       this.bossMesh.position.set(X(b.x), b.y + Math.sin(this.time * 2) * 0.2, b.z);
       this.bossMesh.rotation.z = Math.sin(this.time * 0.7) * 0.08;
       this.bossMesh.rotation.x = -0.28; // tip the saucer so the camera sees its top
-      const { ring, lights } = this.bossMesh.userData;
+      const { ring, lights, tentacles, orbit, cube } = this.bossMesh.userData;
       ring.rotation.z += dt * 2;
+      if (tentacles) for (let i = 0; i < tentacles.length; i++) tentacles[i].rotation.x = Math.sin(this.time * 2 + i) * 0.35;
+      if (orbit) {
+        orbit[0].rotation.z += dt * 1.2;
+        orbit[1].rotation.z -= dt * 0.9;
+        cube.rotation.set(this.time * 1.3, this.time * 1.7, 0);
+      }
       for (let i = 0; i < lights.length; i++) lights[i].visible = Math.floor(this.time * 6 + i) % 2 === 0;
     } else if (this.bossMesh) {
       flash(this.bossMesh, false);
@@ -313,6 +357,42 @@ export class GameView {
       case 'gem':
         obj.userData.spin.rotation.y = t * 4;
         break;
+      case 'charger': {
+        const u = obj.userData;
+        // Wind-up: shakes and glows; charge: wheels spin and sparks fly.
+        const winding = e.state === 'windup';
+        obj.rotation.z = winding ? Math.sin(t * 60) * 0.05 : 0;
+        u.eyeGlow.scale.setScalar(winding ? 1.6 + Math.sin(t * 30) * 0.4 : 1);
+        if (e.state !== 'windup') for (const w of u.wheels) w.rotation.x -= dt * (e.state === 'charge' ? 40 : 12);
+        if (e.state === 'charge' && Math.random() < dt * 30) this.particles.burst(X(e.x), 0.2, e.z + 0.8, [0xffd23f, 0xff6a00], 2, 2, 0.3);
+        break;
+      }
+      case 'turret':
+        obj.userData.head.rotation.y = Math.sin(t * 2) * 0.25;
+        obj.userData.light.visible = Math.floor(t * 4) % 2 === 0;
+        break;
+      case 'bomber': {
+        obj.position.y += Math.sin(t * 3) * 0.1;
+        obj.rotation.z = Math.sin(t * 1.7) * 0.12;
+        const flicker = 0.8 + Math.random() * 0.4;
+        for (const th of obj.userData.thrusters) th.scale.setScalar(0.9 * flicker);
+        obj.userData.bay.visible = Math.floor(t * 5) % 2 === 0;
+        break;
+      }
+      case 'slider':
+        for (const l of obj.userData.lights) l.visible = Math.floor(t * 6) % 2 === 0;
+        break;
+      case 'meteor': {
+        // The fireball falls as the fuse burns; the ring pulses faster and faster.
+        const u = obj.userData;
+        const f = Math.max(0, e.fuse / e.maxFuse);
+        u.rock.position.y = 0.6 + this.world.cfg.METEOR.fallHeight * Math.pow(f, 1.4);
+        u.rock.rotation.x += dt * 4;
+        const pulse = 1 + Math.sin(this.time * (10 + (1 - f) * 25)) * 0.12;
+        u.ring.scale.setScalar(pulse);
+        u.disc.scale.set(1 - f * 0.6, 1, 1 - f * 0.6);
+        break;
+      }
       case 'mine':
         obj.userData.spikes.rotation.y = t * 3;
         obj.userData.spikes.rotation.x = t * 1.7;
@@ -358,9 +438,11 @@ export class GameView {
     const cam = this.stage.camera;
     const k = Math.min(1, dt * 7);
     const px = X(p.x);
-    this.tmp.set(px * 0.55 + this.cameraOffset.x, 4.1 + p.y * 0.3 + this.cameraOffset.y, -7.2);
+    // The camera rises with the jetpack so the flight stays in frame.
+    const lift = p.jetpack > 0 ? 0.85 : 0.3;
+    this.tmp.set(px * 0.55 + this.cameraOffset.x, 4.1 + p.y * lift + this.cameraOffset.y, -7.2);
     this.camPos.lerp(this.tmp, k);
-    this.tmp.set(px * 0.7, 1.3 + p.y * 0.25, 12);
+    this.tmp.set(px * 0.7, 1.3 + p.y * (p.jetpack > 0 ? 0.55 : 0.25), 12);
     this.camLook.lerp(this.tmp, k);
     cam.position.copy(this.camPos);
     if (this.shake > 0) {

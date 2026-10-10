@@ -158,8 +158,22 @@ export function buildCharacter(equipped = DEFAULT_EQUIPPED) {
   const hatObj = buildHat(hat.id, hat.color);
   hatObj.position.y = 1.36;
 
-  bodyPivot.add(body, belly, back, backLight, gun, hatObj);
-  root.userData = { bodyPivot, legs, gun, muzzle: gun.userData.muzzle, skin, weapon };
+  // Jetpack (shown while flying): two tanks and their flames.
+  const jetpack = new Group();
+  const tankGeo = once('tank', () => new CylinderGeometry(0.13, 0.13, 0.55, 12));
+  const flames = [];
+  for (const x of [-0.18, 0.18]) {
+    const tank = new Mesh(tankGeo, lambert(0x8a8aa8, 0x101020));
+    tank.position.set(x, 0.95, -0.58);
+    const flame = glow(0xff8a3d, 0.7);
+    flame.position.set(x, 0.55, -0.58);
+    jetpack.add(tank, flame);
+    flames.push(flame);
+  }
+  jetpack.visible = false;
+
+  bodyPivot.add(body, belly, back, backLight, gun, hatObj, jetpack);
+  root.userData = { bodyPivot, legs, gun, muzzle: gun.userData.muzzle, skin, weapon, jetpack, flames };
   return root;
 }
 

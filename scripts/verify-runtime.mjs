@@ -300,7 +300,19 @@ async function main() {
     await holdFire(() => waitWorld((w) => w.zone.index === 1, null, 30000));
     const boss = await world((w) => ({ bosses: w.stats.bosses, coins: w.score.coins, gems: w.score.gems }));
     check('Boss defeated -> reward and next zone', boss.bosses === 1 && boss.coins >= 40 && boss.gems >= 3, JSON.stringify(boss));
-    await page.waitForTimeout(1500);
+
+    // Perk choice after the boss: the run waits for a card.
+    await sceneActive('Perk', 20000);
+    const offer = await evaluate((h) => window[h].scene('Perk').options, H);
+    check('Perk choice offered after the boss (3 cards, game waiting)', offer.length === 3 && (await evaluate((h) => window[h].scene('Game').phase, H)) === 'perk', offer.join(','));
+    await page.waitForTimeout(700);
+    await shot('04-perks');
+    await tapButton('Perk', 'cards.1');
+    step = 'perk chosen';
+    await waitFor((h) => window[h].scene('Game').phase === 'running', H, 10000);
+    const perks = await world((w) => w.perks);
+    check('Chosen perk applied, run resumes', perks[offer[1]] === 1, JSON.stringify(perks));
+    await page.waitForTimeout(1200);
     await shot('04-zone2');
 
     // Pause / resume.
@@ -342,6 +354,7 @@ async function main() {
     check('Completed game #1 -> no interstitial', s.completed === 1 && s.interstitialShows === 0);
     data = await save();
     check('Lifetime kills and bosses saved', data.lifetime.kills >= 1 && data.lifetime.bosses === 1, JSON.stringify(data.lifetime));
+    check('Player XP earned and saved', data.level > 1 || data.xp > 0, `level ${data.level}, xp ${data.xp}`);
 
     await page.waitForTimeout(400);
     await forceDeath();
@@ -407,6 +420,40 @@ async function main() {
     await page.waitForTimeout(500);
     await shot('08-shop');
     await tapButton('Shop', 'backButton');
+    await sceneActive('Menu');
+
+    // ------------------------------------------------------------ modes
+    await tapButton('Menu', 'modesButton');
+    await sceneActive('Modes');
+    await page.waitForTimeout(400);
+    await shot('09-modes');
+    await tapButton('Modes', 'dailyButton');
+    await newRun();
+    const run1 = await evaluate((h) => {
+      const g = window[h].scene('Game');
+      return { mode: g.mode, modifier: g.challenge?.modifier.id, applied: g.world.modifiers, label: g.hud.modeLabel.visible };
+    }, H);
+    check('Daily challenge: seeded run with today\'s modifier', run1.mode === 'daily' && !!run1.modifier && run1.label, JSON.stringify(run1));
+    await page.waitForTimeout(1500);
+    await forceDeath();
+    await sceneActive('GameOver');
+    const ch = (await save()).challenge;
+    check('Daily challenge: best of the day saved', ch.day > 0 && ch.best > 0, JSON.stringify(ch));
+    await tapButton('GameOver', 'menuButton');
+    await sceneActive('Menu');
+    await tapButton('Menu', 'modesButton');
+    await sceneActive('Modes');
+    await tapButton('Modes', 'bossRushButton');
+    await newRun();
+    step = 'boss rush';
+    await waitWorld((w) => !!w.boss, null, 40000);
+    const rush = await world((w) => ({ mode: w.mode, distance: Math.round(w.distance), obstacles: w.entities.filter((e) => e.kind === 'obstacle').length }));
+    check('Boss rush: a boss right away, no obstacles', rush.mode === 'bossRush' && rush.distance < 200 && rush.obstacles === 0, JSON.stringify(rush));
+    await page.waitForTimeout(800);
+    await shot('10-bossrush');
+    await forceDeath();
+    await sceneActive('GameOver');
+    await tapButton('GameOver', 'menuButton');
     await sceneActive('Menu');
 
     // Longer unattended run: the world keeps spawning without errors.

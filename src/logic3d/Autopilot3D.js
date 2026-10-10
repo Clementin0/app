@@ -1,6 +1,7 @@
 import { laneX } from '../config/game3d.config.js';
 
-const TARGETS = new Set(['walker', 'crate', 'drone', 'mine']);
+const TARGETS = new Set(['walker', 'crate', 'drone', 'mine', 'charger', 'turret', 'bomber']);
+const JUMP_OVER = new Set(['barrier', 'mine', 'gap', 'slider']);
 
 /**
  * Bot that plays a LaneWorld: picks the safest lane, jumps barriers,
@@ -44,11 +45,24 @@ export class Autopilot3D {
           break;
         case 'barrier':
         case 'beam':
+        case 'gap':
+        case 'slider':
           score -= 12;
           break;
+        case 'meteor':
+          // It lands where we will be: never stay under a marker.
+          score -= 900;
+          break;
+        case 'charger':
+          if (e.state === 'charge') {
+            score -= 600;
+            break;
+          }
+        // falls through: shoot it before it charges
         case 'walker':
         case 'crate':
-        case 'mine': {
+        case 'mine':
+        case 'turret': {
           const arrive = d / (w.speed + (e.type === 'walker' ? 4 : 0));
           // Hunt what can be shot down in time (points + loot); otherwise it
           // costs a heart, which is still far better than a wall.
@@ -56,6 +70,7 @@ export class Autopilot3D {
           break;
         }
         case 'drone':
+        case 'bomber':
           score -= 30;
           break;
         case 'coin':
@@ -77,6 +92,8 @@ export class Autopilot3D {
   update(dt = 1 / 60) {
     const w = this.world;
     if (w.state !== 'running') return;
+    // Perk after a boss: take the first one offered.
+    if (w.perkOffer) w.choosePerk(w.perkOffer[0]);
     const p = w.player;
     const horizon = w.speed * 1.1 + 8;
     this.decisionCooldown = Math.max(0, this.decisionCooldown - dt);
@@ -95,6 +112,7 @@ export class Autopilot3D {
         // Our own lane walled off soon: anything else (jump, slide, a hit) is better.
         const trapped = w.entities.some((e) => hard(e) && ahead(e, p.lane, w.speed * 0.6) && p.y < e.y + e.h - 0.2);
         const blockedNow = w.entities.some((e) => {
+          if (e.type === 'meteor') return !e.dead && this._inLane(e, next) && e.fuse < 0.6;
           if (!ahead(e, next, w.speed * 0.35)) return false;
           if (hard(e)) return e.z - e.d / 2 < w.speed * 0.2 && p.y < e.y + e.h - 0.2;
           // No time to jump / slide / shoot after switching into it.
@@ -111,17 +129,25 @@ export class Autopilot3D {
     // 2. Jump / slide for what is right ahead in the current lane.
     let nearest = null;
     for (const e of w.entities) {
-      if (e.dead || e.kind === 'pickup' || !this._inLane(e, p.lane, 1.0)) continue;
+      if (e.dead || e.kind === 'pickup' || e.kind === 'hazard' || !this._inLane(e, p.lane, 1.0)) continue;
       const front = e.z - e.d / 2 - 0.45;
       if (e.z + e.d / 2 < -0.45) continue;
       if (!nearest || front < nearest.front) nearest = { e, front };
     }
-    if (nearest) {
+    if (nearest && p.jetpack <= 0) {
       const { e, front } = nearest;
-      // Barriers, and mines that survived the shots, are jumped.
-      if ((e.type === 'barrier' || e.type === 'mine') && p.grounded && front < w.speed * 0.15 + 0.4) w.jump();
+      // Barriers, holes, sliders and mines that survived the shots are jumped.
+      if (JUMP_OVER.has(e.type) && p.grounded && front < w.speed * 0.15 + 0.4) w.jump();
       else if (e.type === 'beam' && front < w.speed * 0.2 + 0.6) w.slide();
       else if (e.type === 'platform' && p.y < e.y + e.h - 0.2 && p.grounded && front < w.speed * 0.17 + 0.5 && front > 0) w.jump();
+    }
+    // Sliders sweep the whole road: jump any that would be on us when it arrives.
+    for (const e of w.entities) {
+      if (e.dead || e.type !== 'slider' || !p.grounded || p.jetpack > 0) continue;
+      const front = e.z - e.d / 2 - 0.45;
+      if (front < 0 || front > w.speed * 0.15 + 0.6) continue;
+      const xAt = Math.sin(e.phase + ((front / w.speed) * Math.PI * 2) / e.period) * w.cfg.LANES.width;
+      if (Math.abs(xAt - p.x) < e.w / 2 + 1.2) w.jump();
     }
     for (const s of w.eshots) {
       if (Math.abs(s.x - p.x) < 0.8 && s.z > 0 && s.z < 7 && p.grounded && p.slide <= 0.1) w.slide();

@@ -278,11 +278,11 @@ describe('LaneWorld - boss types', () => {
     return w;
   }
 
-  it('each zone has its own boss, cycling after the fourth', () => {
-    expect(GAME3D.BOSS_KINDS.map((k) => k.id)).toEqual(['mothership', 'scorpion', 'carrier', 'overlord']);
-    for (let zone = 0; zone < 6; zone++) {
+  it('each zone has its own boss, cycling after the sixth', () => {
+    expect(GAME3D.BOSS_KINDS.map((k) => k.id)).toEqual(['mothership', 'scorpion', 'carrier', 'overlord', 'kraken', 'core']);
+    for (let zone = 0; zone < 8; zone++) {
       const w = bossWorld(zone);
-      expect(w.boss.bossKind).toBe(GAME3D.BOSS_KINDS[zone % 4].id);
+      expect(w.boss.bossKind).toBe(GAME3D.BOSS_KINDS[zone % 6].id);
       expect(w.hud().boss.kind).toBe(w.boss.bossKind);
       expect(w.drainEvents().find((e) => e.type === 'bossSpawn').bossKind).toBe(w.boss.bossKind);
     }
@@ -347,7 +347,7 @@ describe('LaneWorld - boss types', () => {
   });
 
   it('the autopilot survives every boss type on several seeds', () => {
-    for (let zone = 0; zone < 4; zone++) {
+    for (let zone = 0; zone < 6; zone++) {
       for (let seed = 1; seed <= 4; seed++) {
         const w = bossWorld(zone, seed);
         const bot = new Autopilot3D(w);
