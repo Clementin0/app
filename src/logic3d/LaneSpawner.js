@@ -11,6 +11,8 @@ import { GAME3D } from '../config/game3d.config.js';
 
 const COIN_SPACING = 2.4;
 const FLYER_WINDOW = 4; // rows
+// Patterns timed for normal jumps: left out while the gravity is low.
+const LOW_GRAVITY_SKIP = new Set(['jumpThenSlide', 'sliders']);
 
 export function coinLine(lane, dz0, n, y = 0.5) {
   return Array.from({ length: n }, (_, i) => ({ type: 'coin', lane, dz: dz0 + i * COIN_SPACING, y }));
@@ -242,6 +244,57 @@ export const PATTERNS3D = [
     build: ({ rng }) => ({ length: 8, items: [{ type: 'bomber', lane: rng.int(0, 2), dz: 0 }, ...coinLine(rng.int(0, 2), 4, 4)] }),
   },
   {
+    // A turbo pad, then a lane packed with things to smash through. Without
+    // the turbo that lane is walled off: take another one.
+    key: 'turboStrip',
+    minLevel: 1,
+    weight: () => 1.1,
+    build: ({ rng, level }) => {
+      const [lane, other, free] = shuffledLanes(rng);
+      const blocks = [
+        { type: 'crate', lane, dz: 12 },
+        { type: 'wall', lane, dz: 22 },
+        { type: level >= 3 ? 'walker' : 'crate', lane, dz: 31 },
+        { type: 'wall', lane, dz: 40 },
+      ];
+      const coins = coinLine(lane, 5, 15).filter((c) => blocks.every((b) => Math.abs(b.dz - c.dz) > 1.6));
+      return {
+        length: 41,
+        items: [{ type: 'turbo', lane, dz: 0 }, ...blocks, ...coins, { type: 'barrier', lane: other, dz: 20 }, ...coinArc(other, 20, 18), ...coinLine(free, 8, 5)],
+      };
+    },
+  },
+  {
+    // A ramp launches the runner over a wall, through a line of sky coins.
+    key: 'rampJump',
+    minLevel: 2,
+    weight: () => 1.1,
+    build: ({ rng, speed, lowGravity }) => {
+      const { RAMP, PLAYER, EVENTS } = GAME3D;
+      const [lane, other, free] = shuffledLanes(rng);
+      // Launched near the lip, 0.96 m past the ramp's center: the wall comes
+      // at the top of the flight, whatever the speed.
+      const lip = RAMP.d * (RAMP.at - 0.5);
+      const wallAt = speed * 0.5 + lip;
+      const v = RAMP.launch * (lowGravity ? EVENTS.lowGravity.jump : 1);
+      const g = PLAYER.gravity * (lowGravity ? EVENTS.lowGravity.gravity : 1);
+      const items = [
+        { type: 'ramp', lane, dz: 0 },
+        { type: 'wall', lane, dz: wallAt },
+        { type: 'wall', lane: other, dz: wallAt },
+        ...coinLine(free, wallAt - 7, 4),
+      ];
+      const y0 = RAMP.h * RAMP.at;
+      for (let i = 1; i <= 8; i++) {
+        const t = i * 0.12;
+        items.push({ type: 'coin', lane, dz: lip + speed * t, y: y0 + v * t - (g * t * t) / 2 + 0.9 });
+      }
+      // The next row starts after the landing (a low gravity flight is long).
+      const airtime = (v + Math.sqrt(v * v + 2 * g * y0)) / g;
+      return { length: Math.max(wallAt + 1, lip + speed * airtime + 2), items };
+    },
+  },
+  {
     key: 'ambush',
     minLevel: 4,
     weight: () => 1.3,
@@ -310,11 +363,13 @@ export class LaneSpawner {
     return this._finish('coinsOnly', { length: 6 * COIN_SPACING, items: coinLine(lane, 0, 7) }, speed, 0);
   }
 
-  next(level, speed) {
-    const ctx = { rng: this.rng, speed, level, drones: this.flyers };
+  /** Next row. opts.lowGravity: no rows timed for normal jumps, and coins floating after each row. */
+  next(level, speed, opts = {}) {
+    const lowGravity = !!opts.lowGravity;
+    const ctx = { rng: this.rng, speed, level, drones: this.flyers, lowGravity };
     if (this.count === 0) return this._finish('coinLine', PATTERNS3D[0].build(ctx), speed, level);
     const [a, b] = this.history.slice(-2);
-    let pool = PATTERNS3D.filter((p) => level >= p.minLevel && (!p.allowed || p.allowed(ctx)));
+    let pool = PATTERNS3D.filter((p) => level >= p.minLevel && (!p.allowed || p.allowed(ctx)) && !(lowGravity && LOW_GRAVITY_SKIP.has(p.key)));
     if (a && a === b) pool = pool.filter((p) => p.key !== a);
     const total = pool.reduce((s, p) => s + p.weight(level), 0);
     let roll = this.rng.next() * total;
@@ -326,6 +381,8 @@ export class LaneSpawner {
         break;
       }
     }
-    return this._finish(pick.key, pick.build(ctx), speed, level);
+    const built = pick.build(ctx);
+    if (lowGravity) built.items.push(...coinLine(this.rng.int(0, 2), built.length + 3, 5, GAME3D.EVENTS.lowGravity.coinY));
+    return this._finish(pick.key, built, speed, level);
   }
 }

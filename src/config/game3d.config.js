@@ -118,6 +118,11 @@ export const EVENTS = Object.freeze({
   goldRush: { minZone: 0, duration: 7, speed: 1.15 },
   ambush: { minZone: 0, duration: 18, speed: 0.72, waves: 3, waveEvery: 4.2, reward: 30 },
   meteors: { minZone: 1, duration: 9, every: 0.8, fuse: 1.5, radius: 1.7 },
+  // Sandstorm / blizzard / thunderstorm: the fog closes in, score counts
+  // double and rows come a bit further apart.
+  storm: { minZone: 1, themes: ['desert', 'ice', 'city'], duration: 14, score: 2, gap: 1.25 },
+  // Low gravity: long floaty jumps, floating coins.
+  lowGravity: { minZone: 1, themes: ['abyss', 'orbit'], duration: 14, gravity: 0.42, jump: 0.72, coinY: 3 },
 });
 
 /** Falling meteor: a marker on the road, then an impact on that lane. */
@@ -125,6 +130,15 @@ export const METEOR = Object.freeze({ w: 2.0, h: 3, d: 3.4, fallHeight: 22 });
 
 /** Jetpack power-up: fly over everything for a while, collecting sky coins. */
 export const JETPACK = Object.freeze({ duration: 7, height: 4.3, rise: 9, landingGrace: 1.2 });
+
+/** Turbo pad on the road: a burst of speed that smashes through everything. */
+export const TURBO = Object.freeze({ w: 2.0, h: 0.12, d: 2.4, duration: 2.6, speed: 1.65, rampUp: 5, rampDown: 2.2, grace: 0.9, smashPoints: 20 });
+
+/** Launch ramp: a big jump (over a wall) through a line of sky coins. */
+export const RAMP = Object.freeze({ w: 2.0, h: 0.75, d: 3.2, launch: 17, at: 0.8 });
+
+/** Homing rockets power-up: rockets fly from the shoulders to the nearest enemies. */
+export const ROCKETS = Object.freeze({ duration: 8, every: 0.7, damage: 3, speed: 40, steer: 7, range: 70, splash: 1.8 });
 
 export const SCORE = Object.freeze({
   coin: 10,
@@ -138,10 +152,11 @@ export const POWERUPS = Object.freeze({
   magnet: 8,
   rapid: 7,
   double: 10,
+  rockets: 8,
   magnetRadius: 13,
   shieldGrace: 1.0,
   reviveGrace: 3.0,
   spawnEvery: [14, 24],
 });
 
-export const GAME3D = Object.freeze({ LANES, PLAYER, SPEED, WORLD, WEAPONS_STATS, BULLETS, ENEMIES, OBSTACLES, BOSS, BOSS_KINDS, ZONES, EVENTS, METEOR, JETPACK, SCORE, POWERUPS });
+export const GAME3D = Object.freeze({ LANES, PLAYER, SPEED, WORLD, WEAPONS_STATS, BULLETS, ENEMIES, OBSTACLES, BOSS, BOSS_KINDS, ZONES, EVENTS, METEOR, JETPACK, TURBO, RAMP, ROCKETS, SCORE, POWERUPS });

@@ -23,20 +23,63 @@ export class Autopilot3D {
     return (e.hp / w.damage) * w.interval + 0.15;
   }
 
+  /** A pad still ahead that we can reach in this lane (not too late to switch into it), or one we are on. */
+  _padReachable(e, lane) {
+    const w = this.world;
+    if (e.used) return false;
+    return lane === w.player.lane ? e.z + e.d / 2 > 0.2 : e.z - e.d / 2 > w.speed * 0.25;
+  }
+
+  /** Airborne: will we still be above `top` from `front` to `back` meters ahead? */
+  _clears(front, back, top) {
+    const w = this.world;
+    const p = w.player;
+    if (p.grounded) return false;
+    const g = w.cfg.PLAYER.gravity * (w.lowGravity || p.floaty ? w.cfg.EVENTS.lowGravity.gravity : 1);
+    const yAt = (d) => {
+      const t = Math.max(0, d) / w.speed;
+      return p.y + p.vy * t - (g * t * t) / 2;
+    };
+    return Math.min(yAt(front - 0.45), yAt(back + 0.45)) > top + 0.1;
+  }
+
   /** Higher is better. */
   _laneScore(lane, horizon) {
     const w = this.world;
     const p = w.player;
     let score = -Math.abs(lane - p.lane) * 4;
+    // Turbo smashes through everything: while it lasts, and after a pad we can take.
+    const safe = [];
+    if (p.turbo > 0 && lane === p.lane) safe.push([-Infinity, (p.turbo + 0.5) * w.speed]);
+    for (const e of w.entities) {
+      if (e.type === 'turbo' && this._inLane(e, lane) && this._padReachable(e, lane)) safe.push([e.z, e.z + 45]);
+    }
     for (const e of w.entities) {
       if (e.dead || !this._inLane(e, lane)) continue;
       const front = e.z - e.d / 2;
       const back = e.z + e.d / 2;
       if (back < -0.6 || front > horizon) continue;
       const d = Math.max(0.1, front);
+      if (e.kind !== 'pickup' && e.kind !== 'pad' && safe.some(([a, b]) => e.z > a && e.z < b)) {
+        score += 4; // smash it for points
+        continue;
+      }
       switch (e.type) {
+        case 'turbo':
+          if (this._padReachable(e, lane)) score += 30;
+          break;
+        case 'ramp':
+          if (this._padReachable(e, lane)) score += 20; // sky coins
+          break;
         case 'wall':
-          // Close walls dominate: the nearest one decides.
+          // A ramp right before it (or the flight it gave) takes us over; otherwise close walls dominate.
+          if (
+            (lane === p.lane && this._clears(front, back, e.y + e.h)) ||
+            w.entities.some((r) => r.type === 'ramp' && this._inLane(r, lane) && r.z < e.z && this._padReachable(r, lane))
+          ) {
+            score += 6;
+            break;
+          }
           score -= d < w.speed * 0.7 + 3 ? 5000 : 50 + 2000 / (d + 1);
           break;
         case 'platform':
@@ -108,7 +151,7 @@ export class Autopilot3D {
         const dir = Math.sign(best - p.lane);
         const next = p.lane + dir;
         const hard = (e) => e.type === 'wall' || e.type === 'platform';
-        const ahead = (e, lane, dist) => !e.dead && e.kind !== 'pickup' && this._inLane(e, lane) && e.z + e.d / 2 > -0.6 && e.z - e.d / 2 < dist;
+        const ahead = (e, lane, dist) => !e.dead && e.kind !== 'pickup' && e.kind !== 'pad' && this._inLane(e, lane) && e.z + e.d / 2 > -0.6 && e.z - e.d / 2 < dist;
         // Our own lane walled off soon: anything else (jump, slide, a hit) is better.
         const trapped = w.entities.some((e) => hard(e) && ahead(e, p.lane, w.speed * 0.6) && p.y < e.y + e.h - 0.2);
         const blockedNow = w.entities.some((e) => {
@@ -129,13 +172,17 @@ export class Autopilot3D {
     // 2. Jump / slide for what is right ahead in the current lane.
     let nearest = null;
     for (const e of w.entities) {
-      if (e.dead || e.kind === 'pickup' || e.kind === 'hazard' || !this._inLane(e, p.lane, 1.0)) continue;
+      if (e.dead || e.kind === 'pickup' || e.kind === 'hazard' || e.kind === 'pad' || !this._inLane(e, p.lane, 1.0)) continue;
       const front = e.z - e.d / 2 - 0.45;
       if (e.z + e.d / 2 < -0.45) continue;
       if (!nearest || front < nearest.front) nearest = { e, front };
     }
-    if (nearest && p.jetpack <= 0) {
+    if (nearest && p.jetpack <= 0 && p.turbo <= 0) {
       const { e, front } = nearest;
+      // A long (ramp, low gravity) flight coming down onto something: slam
+      // down before it, there is time to jump or slide once landed.
+      const back = e.z + e.d / 2;
+      if (!p.grounded && p.vy < 0 && front > 1.5 && front < w.speed * 0.9 && !this._clears(front + 0.45, back, e.y + e.h) && e.type !== 'wall') w.slide();
       // Barriers, holes, sliders and mines that survived the shots are jumped.
       if (JUMP_OVER.has(e.type) && p.grounded && front < w.speed * 0.15 + 0.4) w.jump();
       else if (e.type === 'beam' && front < w.speed * 0.2 + 0.6) w.slide();
