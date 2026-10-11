@@ -23,25 +23,63 @@ function make(key, w, h, draw, { repeat = false } = {}) {
 
 const hex = (c) => `#${c.toString(16).padStart(6, '0')}`;
 
-/** Road: dark asphalt with dashed neon lane separators (scrolls on T). */
+/**
+ * Road: dark asphalt with fine noise, glowing dashed lane separators (with a
+ * soft halo for the bloom), neon edge bands and faint "wet" reflections.
+ * Scrolls on T.
+ */
 export function roadTexture(roadColor, lineColor) {
-  return make(`road_${roadColor}_${lineColor}`, 256, 256, (ctx, w, h) => {
+  return make(`road_${roadColor}_${lineColor}`, 512, 512, (ctx, w, h) => {
     ctx.fillStyle = hex(roadColor);
     ctx.fillRect(0, 0, w, h);
-    ctx.globalAlpha = 0.18;
-    ctx.strokeStyle = hex(lineColor);
+    // Asphalt grain.
+    let seed = roadColor % 9973 || 7;
+    const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 2600; i++) {
+      ctx.fillStyle = rand() < 0.5 ? 'rgba(255,255,255,0.035)' : 'rgba(0,0,0,0.12)';
+      ctx.fillRect(rand() * w, rand() * h, 2, 2);
+    }
+    // Wet reflections: soft vertical streaks of the neon color.
+    const line = hex(lineColor);
+    for (const x of [w * 0.18, w * 0.5, w * 0.82]) {
+      const g = ctx.createLinearGradient(x - 40, 0, x + 40, 0);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(0.5, line);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = 0.07;
+      ctx.fillStyle = g;
+      ctx.fillRect(x - 40, 0, 80, h);
+    }
+    // Cross lines (sense of speed).
+    ctx.globalAlpha = 0.14;
+    ctx.strokeStyle = line;
     ctx.lineWidth = 2;
-    for (let y = 0; y < h; y += 32) {
+    for (let y = 0; y < h; y += 64) {
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(w, y);
       ctx.stroke();
     }
+    // Dashed lane separators with a halo.
+    for (const x of [w / 3, (2 * w) / 3]) {
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = line;
+      ctx.fillRect(x - 10, 0, 20, h * 0.55);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x - 2, 0, 4, h * 0.55);
+      ctx.fillStyle = line;
+      ctx.fillRect(x - 5, 0, 3, h * 0.55);
+      ctx.fillRect(x + 2, 0, 3, h * 0.55);
+    }
+    // Edge bands.
     ctx.globalAlpha = 1;
-    ctx.fillStyle = hex(lineColor);
-    for (const x of [w / 3, (2 * w) / 3]) ctx.fillRect(x - 3, 0, 6, h * 0.55);
-    ctx.fillRect(0, 0, 8, h);
-    ctx.fillRect(w - 8, 0, 8, h);
+    ctx.fillStyle = line;
+    ctx.fillRect(0, 0, 12, h);
+    ctx.fillRect(w - 12, 0, 12, h);
+    ctx.globalAlpha = 0.4;
+    ctx.fillRect(12, 0, 10, h);
+    ctx.fillRect(w - 22, 0, 10, h);
   }, { repeat: true });
 }
 
@@ -135,15 +173,39 @@ export function panelTexture(color) {
   });
 }
 
-/** Vertical sky gradient (redrawn when the zone changes). */
-export function drawSky(canvas, colors) {
+/**
+ * Sky (redrawn when the zone changes): gradient, glowing horizon bands and
+ * stars in the upper part.
+ */
+export function drawSky(canvas, colors, { stars = 0.5 } = {}) {
   const ctx = canvas.getContext('2d');
-  const g = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  const { width: w, height: h } = canvas;
+  const g = ctx.createLinearGradient(0, 0, 0, h);
   g.addColorStop(0, colors[0]);
-  g.addColorStop(0.55, colors[1]);
-  g.addColorStop(1, colors[2]);
+  g.addColorStop(0.5, colors[1]);
+  g.addColorStop(0.82, colors[2]);
+  g.addColorStop(1, colors[1]);
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, w, h);
+  // Horizon glow.
+  const hz = ctx.createLinearGradient(0, h * 0.62, 0, h * 0.86);
+  hz.addColorStop(0, 'rgba(255,255,255,0)');
+  hz.addColorStop(0.7, colors[2]);
+  hz.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.globalAlpha = 0.5;
+  ctx.fillStyle = hz;
+  ctx.fillRect(0, h * 0.62, w, h * 0.24);
+  // Stars.
+  let seed = 4242;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 260 * stars; i++) {
+    const y = rand() * h * 0.6;
+    ctx.globalAlpha = (1 - y / (h * 0.6)) * (0.3 + rand() * 0.7);
+    ctx.fillStyle = '#ffffff';
+    const r = rand() < 0.08 ? 2 : 1;
+    ctx.fillRect(rand() * w, y, r, r);
+  }
+  ctx.globalAlpha = 1;
 }
 
 /** Synthwave sun with horizontal cuts. */
@@ -247,5 +309,110 @@ export function powerupIconTexture(type) {
         ctx.textBaseline = 'middle';
         ctx.fillText('x2', c, c + 4);
     }
+  });
+}
+
+/** Pyramid faces: dark stone with glowing edges along the cone seams. */
+export function pyramidTexture(base, edge) {
+  return make(`pyr_${base}_${edge}`, 256, 128, (ctx, w, h) => {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, hex(edge));
+    g.addColorStop(0.08, hex(base));
+    g.addColorStop(1, '#05010a');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = hex(edge);
+    ctx.lineWidth = 5;
+    for (let i = 0; i <= 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo((i * w) / 4, 0);
+      ctx.lineTo((i * w) / 4, h);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = 2;
+    for (let y = h * 0.3; y < h; y += h * 0.18) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+  });
+}
+
+/** Thin vertical streak (rain, warp speed lines). */
+export function streakTexture() {
+  const tex = make('streak', 16, 128, (ctx, w, h) => {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, 'rgba(255,255,255,0)');
+    g.addColorStop(0.5, 'rgba(255,255,255,1)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(w / 2 - 2, 0, 4, h);
+  });
+  tex.minFilter = LinearFilter;
+  return tex;
+}
+
+/** Ringed planet for the orbit zone sky. */
+export function planetTexture(c1, c2, ring) {
+  return make(`planet_${c1}_${c2}`, 512, 512, (ctx, w) => {
+    const c = w / 2;
+    const drawRing = (front) => {
+      ctx.save();
+      ctx.translate(c, c);
+      ctx.rotate(-0.35);
+      ctx.scale(1, 0.28);
+      ctx.beginPath();
+      ctx.arc(0, 0, 220, front ? 0 : Math.PI, front ? Math.PI : Math.PI * 2);
+      ctx.lineWidth = 26;
+      ctx.strokeStyle = hex(ring);
+      ctx.globalAlpha = 0.75;
+      ctx.stroke();
+      ctx.lineWidth = 6;
+      ctx.globalAlpha = 1;
+      ctx.stroke();
+      ctx.restore();
+    };
+    drawRing(false);
+    const g = ctx.createRadialGradient(c - 50, c - 60, 20, c, c, 140);
+    g.addColorStop(0, hex(c1));
+    g.addColorStop(1, hex(c2));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(c, c, 140, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.25;
+    ctx.strokeStyle = '#ffffff';
+    for (let y = c - 120; y < c + 130; y += 26) {
+      ctx.beginPath();
+      ctx.moveTo(c - 140, y);
+      ctx.quadraticCurveTo(c, y + 18, c + 140, y);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    drawRing(true);
+  });
+}
+
+/** Neon sign (holographic billboard) with a short word. */
+export function signTexture(text, color) {
+  return make(`sign_${text}_${color}`, 256, 128, (ctx, w, h) => {
+    ctx.fillStyle = 'rgba(10,4,30,0.55)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = hex(color);
+    ctx.lineWidth = 6;
+    ctx.strokeRect(6, 6, w - 12, h - 12);
+    ctx.font = 'bold 64px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = hex(color);
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = hex(color);
+    ctx.fillText(text, w / 2, h / 2 + 4);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 0.6;
+    ctx.fillText(text, w / 2, h / 2 + 4);
   });
 }

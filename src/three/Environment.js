@@ -1,52 +1,65 @@
 import {
   AdditiveBlending,
   BoxGeometry,
-  BufferAttribute,
-  BufferGeometry,
   CanvasTexture,
   Color,
   DirectionalLight,
   Fog,
+  Group,
   HemisphereLight,
   InstancedMesh,
-  Matrix4,
+  LineBasicMaterial,
+  LineSegments,
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
+  Object3D,
   PlaneGeometry,
-  Points,
-  PointsMaterial,
   Sprite,
   SpriteMaterial,
   SRGBColorSpace,
+  WireframeGeometry,
 } from 'three';
 import { LANES } from '../config/game3d.config.js';
 import { zoneTheme } from '../config/zones.js';
-import { dotTexture, drawSky, gridTexture, roadTexture, sunTexture, windowsTexture } from './textures3d.js';
+import { buildScenery } from './Scenery.js';
+import { dotTexture, drawSky, gridTexture, planetTexture, roadTexture, sunTexture } from './textures3d.js';
+import { SpeedLines, Weather } from './Weather.js';
 
 const ROAD_LEN = 320;
 const ROAD_CENTER = 140;
 const TILE = 8; // meters per road texture tile
 const ROAD_HALF = (LANES.count * LANES.width) / 2 + 0.6;
-const MAX_BUILDINGS = 64;
-const BUILDING_SPAN = [-30, 320];
+const ARCH_GAP = 44;
+const POLE_GAP = 18;
+const RIG_SPAN = [-20, 330];
+
+/** Value noise for the mountain ridges (deterministic). */
+function ridge(x, z) {
+  const s = Math.sin(x * 0.045) * 0.5 + Math.sin(x * 0.11 + z * 0.07) * 0.3 + Math.sin(x * 0.23 - z * 0.13) * 0.2;
+  return Math.max(0, s * 0.5 + 0.5);
+}
 
 /**
- * The world around the track: sky, fog, lights, scrolling road and grid,
- * instanced city blocks, sun and stars. Themed per zone.
+ * The world around the track: sky, fog and lights, the scrolling road and
+ * grid, synthwave wireframe mountains on the horizon, neon arches and light
+ * poles along the road, zone scenery (towers, pyramids, crystals, volcanoes,
+ * kelp, asteroids), weather particles, speed lines, the sun and a planet.
  */
 export class Environment {
-  constructor(scene, { buildings = 50 } = {}) {
+  constructor(scene, quality = {}) {
     this.scene = scene;
+    this.quality = quality;
     this.themeIndex = -1;
     this.transition = 1;
     this.fogFrom = new Color();
     this.fogTo = new Color();
+    this.boost = 0; // 0..1, set by the game view (turbo)
 
-    // Sky gradient as screen-space background.
+    // Sky gradient (with stars) as screen-space background.
     this.skyCanvas = document.createElement('canvas');
-    this.skyCanvas.width = 2;
-    this.skyCanvas.height = 256;
+    this.skyCanvas.width = 256;
+    this.skyCanvas.height = 512;
     this.skyTex = new CanvasTexture(this.skyCanvas);
     this.skyTex.colorSpace = SRGBColorSpace;
     scene.background = this.skyTex;
@@ -58,7 +71,7 @@ export class Environment {
     scene.add(this.hemi, this.sunLight);
 
     // Road and side ground.
-    this.roadMat = new MeshLambertMaterial({ color: 0xffffff });
+    this.roadMat = new MeshLambertMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.35 });
     this.road = new Mesh(new PlaneGeometry(ROAD_HALF * 2, ROAD_LEN), this.roadMat);
     this.road.rotation.x = -Math.PI / 2;
     this.road.position.z = ROAD_CENTER;
@@ -77,67 +90,145 @@ export class Environment {
     });
     scene.add(this.road, ...this.sides, ...this.edges);
 
-    // City blocks on both sides.
-    this.buildingMat = new MeshLambertMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.55 });
-    // Allocated for the highest quality; `count` decides how many are drawn.
-    const capacity = Math.max(buildings, MAX_BUILDINGS);
-    this.count = buildings;
-    this.buildings = new InstancedMesh(new BoxGeometry(1, 1, 1), this.buildingMat, capacity);
-    this.buildings.count = buildings;
-    this.blocks = [];
-    for (let i = 0; i < capacity; i++) {
-      const side = i % 2 ? 1 : -1;
-      this.blocks.push({
-        x: side * (ROAD_HALF + 9 + Math.random() * 26),
-        z: BUILDING_SPAN[0] + Math.random() * (BUILDING_SPAN[1] - BUILDING_SPAN[0]),
-        w: 3 + Math.random() * 5,
-        d: 3 + Math.random() * 6,
-        h: 6 + Math.random() * 30,
-      });
-    }
-    this.matrix = new Matrix4();
-    this._writeBuildings();
-    scene.add(this.buildings);
+    this._buildMountains();
+    this._buildRig();
 
-    // Sun and stars ignore the fog.
+    // Sun with a soft halo (the halo stands in for bloom on low quality).
     this.sunMat = new SpriteMaterial({ fog: false, transparent: true, depthWrite: false });
     this.sun = new Sprite(this.sunMat);
     this.sun.scale.set(150, 150, 1);
     this.sun.position.set(0, 30, 380);
-    scene.add(this.sun);
+    this.haloMat = new SpriteMaterial({ map: dotTexture(), fog: false, transparent: true, depthWrite: false, blending: AdditiveBlending, opacity: 0.35 });
+    this.halo = new Sprite(this.haloMat);
+    this.halo.scale.set(320, 320, 1);
+    this.halo.position.set(0, 30, 390);
+    scene.add(this.halo, this.sun);
 
-    const starPos = new Float32Array(300 * 3);
-    for (let i = 0; i < 300; i++) {
-      const a = Math.random() * Math.PI - Math.PI / 2;
-      starPos.set([Math.sin(a) * 350, 40 + Math.random() * 160, 200 + Math.cos(a) * 200], i * 3);
-    }
-    const starGeo = new BufferGeometry();
-    starGeo.setAttribute('position', new BufferAttribute(starPos, 3));
-    this.stars = new Points(starGeo, new PointsMaterial({ size: 1.4, map: dotTexture(), color: 0xffffff, transparent: true, fog: false, depthWrite: false, blending: AdditiveBlending }));
-    scene.add(this.stars);
+    // Ringed planet (orbit zone).
+    this.planet = new Sprite(new SpriteMaterial({ map: planetTexture(0xd6c8ff, 0x3a1a8a, 0x9d4dff), fog: false, transparent: true, depthWrite: false }));
+    this.planet.scale.set(150, 150, 1);
+    this.planet.position.set(-110, 75, 360);
+    scene.add(this.planet);
 
+    this.weather = new Weather(scene, 420);
+    this.speedLines = new SpeedLines(scene, 36);
+    this.sceneries = {};
     this.scroll = 0;
+    this.setDetail(quality);
     this.setTheme(0, true);
   }
 
-  _writeBuildings() {
-    for (let i = 0; i < this.count; i++) {
-      const b = this.blocks[i];
-      this.matrix.makeScale(b.w, b.h, b.d);
-      this.matrix.setPosition(b.x, b.h / 2, b.z);
-      this.buildings.setMatrixAt(i, this.matrix);
+  // --------------------------------------------------------------- parts
+
+  /** Synthwave wireframe mountain range on the horizon, with a valley for the road. */
+  _buildMountains() {
+    const geo = new PlaneGeometry(700, 110, 96, 18);
+    geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const z = pos.getZ(i);
+      const valley = Math.min(1, Math.max(0, (Math.abs(x) - 25) / 90));
+      const back = 0.4 + 0.6 * ((z + 55) / 110); // taller towards the back
+      pos.setY(i, ridge(x, z) * 52 * valley * back);
     }
-    this.buildings.instanceMatrix.needsUpdate = true;
+    geo.computeVertexNormals();
+    this.mountainFill = new MeshBasicMaterial({ color: 0x000000, fog: false });
+    this.mountainWire = new LineBasicMaterial({ color: 0xffffff, fog: false, transparent: true, opacity: 0.8 });
+    this.mountains = new Group();
+    const fill = new Mesh(geo, this.mountainFill);
+    const wire = new LineSegments(new WireframeGeometry(geo), this.mountainWire);
+    wire.position.y = 0.05;
+    this.mountains.add(fill, wire);
+    this.mountains.position.set(0, -2, 300);
+    this.scene.add(this.mountains);
   }
 
-  /** Number of city blocks drawn (graphics quality). */
+  /** Neon arches over the road and light poles along it (instanced). */
+  _buildRig() {
+    const span = RIG_SPAN[1] - RIG_SPAN[0];
+    this.archMat = new MeshBasicMaterial({ color: 0xffffff });
+    this.arches = new InstancedMesh(new BoxGeometry(1, 1, 1), this.archMat, Math.ceil(span / ARCH_GAP) * 3);
+    this.archZ = Array.from({ length: Math.ceil(span / ARCH_GAP) }, (_, i) => RIG_SPAN[0] + 30 + i * ARCH_GAP);
+    this.poleMat = new MeshLambertMaterial({ color: 0x1a1430, emissive: 0x0a0618 });
+    this.lampMat = new MeshBasicMaterial({ color: 0xffffff });
+    const poles = Math.ceil(span / POLE_GAP) * 2;
+    this.poles = new InstancedMesh(new BoxGeometry(1, 1, 1), this.poleMat, poles);
+    this.lamps = new InstancedMesh(new BoxGeometry(1, 1, 1), this.lampMat, poles);
+    this.poleZ = Array.from({ length: Math.ceil(span / POLE_GAP) }, (_, i) => RIG_SPAN[0] + i * POLE_GAP);
+    for (const m of [this.arches, this.poles, this.lamps]) m.frustumCulled = false;
+    this.dummy = new Object3D();
+    this.tint = new Color();
+    this.scene.add(this.arches, this.poles, this.lamps);
+    this._writeRig();
+  }
+
+  _writeRig() {
+    const d = this.dummy;
+    const set = (mesh, i, x, y, z, sx, sy, sz) => {
+      d.position.set(x, y, z);
+      d.rotation.set(0, 0, 0);
+      d.scale.set(sx, sy, sz);
+      d.updateMatrix();
+      mesh.setMatrixAt(i, d.matrix);
+    };
+    // Neon close to the camera fills the screen edges and blooms into
+    // giant bars: it dims to a dark silhouette over the last meters.
+    const near = (z) => this.tint.setScalar(Math.min(1, Math.max(0.08, (z - 3) / 14)));
+    const w = ROAD_HALF + 0.9;
+    this.archZ.forEach((z, i) => {
+      set(this.arches, i * 3, -w, 3.3, z, 0.25, 6.6, 0.25);
+      set(this.arches, i * 3 + 1, w, 3.3, z, 0.25, 6.6, 0.25);
+      set(this.arches, i * 3 + 2, 0, 6.6, z, w * 2 + 0.25, 0.25, 0.25);
+      near(z);
+      for (let k = 0; k < 3; k++) this.arches.setColorAt(i * 3 + k, this.tint);
+    });
+    this.poleZ.forEach((z, i) => {
+      near(z);
+      for (const s of [0, 1]) {
+        const x = (s ? 1 : -1) * (ROAD_HALF + 2.2);
+        set(this.poles, i * 2 + s, x, 2.6, z, 0.16, 5.2, 0.16);
+        set(this.lamps, i * 2 + s, x - (s ? 0.35 : -0.35), 5.25, z, 0.9, 0.12, 0.3);
+        this.lamps.setColorAt(i * 2 + s, this.tint);
+      }
+    });
+    for (const m of [this.arches, this.poles, this.lamps]) m.instanceMatrix.needsUpdate = true;
+    this.arches.instanceColor.needsUpdate = true;
+    this.lamps.instanceColor.needsUpdate = true;
+  }
+
+  _scenery(theme) {
+    if (!this.sceneries[theme.id]) this.sceneries[theme.id] = buildScenery(this.scene, theme, ROAD_HALF, 1);
+    return this.sceneries[theme.id];
+  }
+
+  // ------------------------------------------------------------- quality
+
+  /** Number of city towers drawn (graphics quality). */
   setBuildingCount(n) {
-    this.count = Math.max(0, Math.min(n, this.blocks.length));
-    this.buildings.count = this.count;
-    this._writeBuildings();
+    this.towerCount = n;
+    this.sceneries.city?.[0].setCount(n);
   }
 
-  /** Switches palette, textures and lights to the given zone. */
+  /** Scenery density and weather particles for a quality level. */
+  setDetail(q) {
+    this.quality = q;
+    this.towerCount = q.buildings ?? 44;
+    for (const [id, layers] of Object.entries(this.sceneries)) this._applyDetail(id, layers);
+    this.weather.setCount(q.weather ?? 260);
+  }
+
+  _applyDetail(id, layers) {
+    const k = this.quality.props ?? 0.8;
+    layers.forEach((l, i) => {
+      if (id === 'city' && i === 0) l.setCount(this.towerCount);
+      else if (l.capacity) l.setCount(l.capacity * k);
+    });
+  }
+
+  // --------------------------------------------------------------- theme
+
+  /** Switches palette, scenery, weather and sky to the given zone. */
   setTheme(index, instant = false) {
     const theme = zoneTheme(index);
     if (index === this.themeIndex) return theme;
@@ -148,12 +239,13 @@ export class Environment {
     this.transition = instant ? 1 : 0;
     if (instant) this.scene.fog.color.copy(this.fogTo);
 
-    drawSky(this.skyCanvas, theme.sky);
+    drawSky(this.skyCanvas, theme.sky, { stars: theme.id === 'orbit' ? 1.6 : theme.id === 'abyss' ? 0.15 : 0.6 });
     this.skyTex.needsUpdate = true;
 
     const road = roadTexture(theme.road, theme.line);
     road.repeat.set(1, ROAD_LEN / TILE);
     this.roadMat.map = road;
+    this.roadMat.emissiveMap = road;
     this.roadMat.needsUpdate = true;
     const grid = gridTexture(theme.side, theme.grid);
     grid.repeat.set(20, ROAD_LEN / 4);
@@ -161,23 +253,43 @@ export class Environment {
     this.sideMat.needsUpdate = true;
     this.edgeMat.color.setHex(theme.line);
 
-    const win = windowsTexture(theme.window);
-    this.buildingMat.map = win;
-    this.buildingMat.emissiveMap = win;
-    this.buildingMat.color.setHex(theme.building);
-    this.buildingMat.needsUpdate = true;
+    // Scenery of this zone only.
+    const current = this._scenery(theme);
+    this._applyDetail(theme.id, current);
+    for (const [id, layers] of Object.entries(this.sceneries)) for (const l of layers) l.setVisible(id === theme.id);
+
+    this.mountains.visible = theme.mountains !== false;
+    this.mountainFill.color.setHex(theme.side);
+    this.mountainWire.color.setHex(theme.grid);
+    this.archMat.color.setHex(theme.line);
+    this.arches.visible = theme.arches !== false;
+    this.lampMat.color.setHex(theme.window[0]);
+    this.weather.setType(theme.weather);
+    this.planet.visible = theme.id === 'orbit';
 
     this.sunMat.map = sunTexture(theme.sun);
     this.sunMat.needsUpdate = true;
+    this.haloMat.color.set(theme.sun[1]);
     this.hemi.groundColor.setHex(theme.fog);
     return theme;
   }
 
-  update(dt, speed) {
+  /** Storm event: thicker weather and closer fog (0 = normal). */
+  setStorm(k) {
+    this.storm = k;
+    this.weather.setIntensity(1 + k * 2.5);
+  }
+
+  update(dt, speed, camera) {
     if (this.transition < 1) {
       this.transition = Math.min(1, this.transition + dt / 1.5);
       this.scene.fog.color.lerpColors(this.fogFrom, this.fogTo, this.transition);
     }
+    // Fog closes in during a storm.
+    const storm = this.storm ?? 0;
+    this.scene.fog.near = 30 - storm * 22;
+    this.scene.fog.far = 125 - storm * 70;
+
     const dz = speed * dt;
     if (dz > 0) {
       this.scroll += dz;
@@ -185,15 +297,15 @@ export class Environment {
       // offset moves the pattern towards the camera.
       if (this.roadMat.map) this.roadMat.map.offset.y = -((this.scroll / TILE) % 1);
       if (this.sideMat.map) this.sideMat.map.offset.y = -((this.scroll / 4) % 1);
-      const span = BUILDING_SPAN[1] - BUILDING_SPAN[0];
-      for (const b of this.blocks) {
-        b.z -= dz;
-        if (b.z < BUILDING_SPAN[0]) {
-          b.z += span;
-          b.h = 6 + Math.random() * 30;
-        }
-      }
-      this._writeBuildings();
+      const span = RIG_SPAN[1] - RIG_SPAN[0];
+      const wrap = (z) => (z - dz < RIG_SPAN[0] ? z - dz + span : z - dz);
+      for (let i = 0; i < this.archZ.length; i++) this.archZ[i] = wrap(this.archZ[i]);
+      for (let i = 0; i < this.poleZ.length; i++) this.poleZ[i] = wrap(this.poleZ[i]);
+      this._writeRig();
     }
+    for (const l of this.sceneries[this.theme.id] ?? []) l.update(dz, dt);
+    this.weather.update(dt, speed);
+    const fast = Math.min(1, Math.max(0, (speed - 26) / 8)) * 0.55;
+    this.speedLines.update(dt, speed, Math.max(fast, this.boost), camera?.position.x ?? 0);
   }
 }

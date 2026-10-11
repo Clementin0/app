@@ -16,6 +16,9 @@ export const ZONE_THEMES = Object.freeze([
     window: [0x00f5ff, 0xff2bd6],
     sun: ['#ffe86b', '#ff8a3d', '#ff2bd6'],
     music: 0,
+    weather: 'rain',
+    mountains: true,
+    arches: true,
   },
   {
     id: 'desert',
@@ -30,6 +33,9 @@ export const ZONE_THEMES = Object.freeze([
     window: [0xffd23f, 0xff8a3d],
     sun: ['#fff3b0', '#ffb347', '#ff5e62'],
     music: 1,
+    weather: 'sand',
+    mountains: true,
+    arches: false,
   },
   {
     id: 'ice',
@@ -44,6 +50,9 @@ export const ZONE_THEMES = Object.freeze([
     window: [0xe0ffff, 0x7ff3ff],
     sun: ['#ffffff', '#b8f7ff', '#4fc3ff'],
     music: 2,
+    weather: 'snow',
+    mountains: true,
+    arches: false,
   },
   {
     id: 'inferno',
@@ -58,6 +67,9 @@ export const ZONE_THEMES = Object.freeze([
     window: [0xff6a00, 0xffd23f],
     sun: ['#ffd23f', '#ff6a00', '#b30000'],
     music: 3,
+    weather: 'embers',
+    mountains: true,
+    arches: true,
   },
   {
     id: 'abyss',
@@ -72,6 +84,9 @@ export const ZONE_THEMES = Object.freeze([
     window: [0x39ffd2, 0xb8fff0],
     sun: ['#e0fff7', '#39ffd2', '#007a6a'],
     music: 4,
+    weather: 'bubbles',
+    mountains: true,
+    arches: false,
   },
   {
     id: 'orbit',
@@ -86,6 +101,9 @@ export const ZONE_THEMES = Object.freeze([
     window: [0xffffff, 0x9d4dff],
     sun: ['#ffffff', '#d6c8ff', '#6a2bd6'],
     music: 5,
+    weather: 'stardust',
+    mountains: false,
+    arches: true,
   },
 ]);
 

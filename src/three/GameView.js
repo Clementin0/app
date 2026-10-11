@@ -123,6 +123,7 @@ export class GameView {
           break;
         case 'hurt':
           this.addShake(0.45);
+          if (this.effects) this.stage.pulse('hurt');
           ps.burst(px, p.y + 1, 0.4, [0xff3860, 0xffffff], 18, 5, 0.5);
           break;
         case 'coin':
@@ -164,6 +165,9 @@ export class GameView {
           break;
         case 'zone':
           this.theme = this.stage.environment.setTheme(e.index);
+          break;
+        case 'bossSpawn':
+          if (this.effects) this.stage.pulse('boss');
           break;
         case 'bossDrop':
           // Mines fall from the boss's belly.
