@@ -22,5 +22,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.js'],
+    // The autopilot sweeps simulate minutes of play: room for slow CI runners.
+    testTimeout: 30000,
   },
 });
