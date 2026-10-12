@@ -132,6 +132,8 @@ export class LaneWorld {
       rockets: 0, // seconds of homing rockets left
       rocketTimer: 0,
       rocketSide: 1,
+      rampId: null, // the ramp under the runner
+      floaty: false, // airborne since a low gravity jump
     };
     this.combo = { count: 0, timer: 0, best: 0 };
     // Tutorial hooks: no random rows, and nothing can hurt the player.
@@ -810,6 +812,7 @@ export class LaneWorld {
 
     let surface = 0;
     let ramp = null;
+    let passed = null; // the ramp we were on last step, now behind its lip
     const box = this.playerBox();
     for (const e of this.entities) {
       if (e.dead) continue;
@@ -823,10 +826,11 @@ export class LaneWorld {
         // The slope rises from the foot (u = 0) to the lip (u = 1).
         const u = -(e.z - e.d / 2) / e.d;
         const top = e.h * u;
-        if (u >= 0 && u <= 1 && prevY >= top - 0.5 && top >= surface) {
+        // Once on the slope we stay on it, however long the step.
+        if (u >= 0 && u <= 1 && (prevY >= top - 0.5 || e.id === p.rampId) && top >= surface) {
           surface = top;
           ramp = e;
-        }
+        } else if (u > 1 && e.id === p.rampId) passed = e;
       }
     }
 
@@ -846,13 +850,17 @@ export class LaneWorld {
       p.grounded = false;
     }
     p.surface = surface;
-    // Near the lip of a ramp: launched into the air.
+    // Near the lip of a ramp: launched into the air (also when a long step
+    // at low frame rate jumped past the lip).
     if (ramp && p.grounded && -(ramp.z - ramp.d / 2) / ramp.d >= this.cfg.RAMP.at) this._launch(ramp);
+    else if (passed && !passed.used && !ramp) this._launch(passed);
+    p.rampId = ramp && p.grounded ? ramp.id : null;
   }
 
   _launch(ramp) {
     const p = this.player;
     ramp.used = true;
+    p.y = Math.max(p.y, ramp.h * this.cfg.RAMP.at);
     p.vy = this.cfg.RAMP.launch * (this.lowGravity?.jump ?? 1);
     p.grounded = false;
     p.slide = 0;

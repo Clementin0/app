@@ -118,6 +118,18 @@ describe('v4 ramps', () => {
     }
   });
 
+  it('a ramp launches even when a slow frame steps past its lip (20 fps, turbo speed)', () => {
+    for (const speed of [34, 56]) {
+      const w = quietWorld();
+      w._speedAt = () => speed;
+      w.speed = speed;
+      const ramp = place(w, { type: 'ramp' }, 10);
+      for (let i = 0; i < 40 && !ramp.used; i++) w.step(1 / 20);
+      expect(ramp.used, `speed ${speed}`).toBe(true);
+      expect(w.player.vy).toBeGreaterThan(10);
+    }
+  });
+
   it('the ramp launch is softer in low gravity, still clearing the wall', () => {
     const w = quietWorld();
     w._startEvent('lowGravity');

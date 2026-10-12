@@ -24,7 +24,7 @@ import { LANES } from '../config/game3d.config.js';
 import { zoneTheme } from '../config/zones.js';
 import { buildScenery } from './Scenery.js';
 import { dotTexture, drawSky, gridTexture, planetTexture, roadTexture, sunTexture } from './textures3d.js';
-import { SpeedLines, Weather } from './Weather.js';
+import { SpeedLines, Weather, WEATHER_TYPES } from './Weather.js';
 
 const ROAD_LEN = 320;
 const ROAD_CENTER = 140;
@@ -54,7 +54,12 @@ export class Environment {
     this.transition = 1;
     this.fogFrom = new Color();
     this.fogTo = new Color();
+    this.fogBase = new Color();
+    this.white = new Color(0xdde6ff);
+    this.stormColor = new Color();
+    this.storm = 0;
     this.boost = 0; // 0..1, set by the game view (turbo)
+    this.flashK = 0; // lightning
 
     // Sky gradient (with stars) as screen-space background.
     this.skyCanvas = document.createElement('canvas');
@@ -110,7 +115,8 @@ export class Environment {
     this.planet.position.set(-110, 75, 360);
     scene.add(this.planet);
 
-    this.weather = new Weather(scene, 420);
+    // Room for a storm: up to 2.5x the high quality particle count.
+    this.weather = new Weather(scene, 1050);
     this.speedLines = new SpeedLines(scene, 36);
     this.sceneries = {};
     this.scroll = 0;
@@ -237,7 +243,10 @@ export class Environment {
     this.fogFrom.copy(this.scene.fog.color);
     this.fogTo.setHex(theme.fog);
     this.transition = instant ? 1 : 0;
-    if (instant) this.scene.fog.color.copy(this.fogTo);
+    if (instant) {
+      this.fogBase.copy(this.fogTo);
+      this.scene.fog.color.copy(this.fogTo);
+    }
 
     drawSky(this.skyCanvas, theme.sky, { stars: theme.id === 'orbit' ? 1.6 : theme.id === 'abyss' ? 0.15 : 0.6 });
     this.skyTex.needsUpdate = true;
@@ -265,6 +274,8 @@ export class Environment {
     this.arches.visible = theme.arches !== false;
     this.lampMat.color.setHex(theme.window[0]);
     this.weather.setType(theme.weather);
+    // Storm fog: a dark tint of the zone's weather (sand, snow, rain).
+    this.stormColor.setHex(WEATHER_TYPES[theme.weather]?.color ?? 0x808080).multiplyScalar(0.32);
     this.planet.visible = theme.id === 'orbit';
 
     this.sunMat.map = sunTexture(theme.sun);
@@ -278,15 +289,34 @@ export class Environment {
   setStorm(k) {
     this.storm = k;
     this.weather.setIntensity(1 + k * 2.5);
+    // The sun and the horizon fade behind the storm.
+    this.sunMat.opacity = 1 - k * 0.75;
+    this.haloMat.opacity = 0.35 * (1 - k * 0.6);
+    this.mountainWire.opacity = 0.8 * (1 - k * 0.7);
+  }
+
+  /** A lightning flash: the sky, fog and lights blink white. */
+  lightning() {
+    this.flashK = 1;
   }
 
   update(dt, speed, camera) {
     if (this.transition < 1) {
       this.transition = Math.min(1, this.transition + dt / 1.5);
-      this.scene.fog.color.lerpColors(this.fogFrom, this.fogTo, this.transition);
+      this.fogBase.lerpColors(this.fogFrom, this.fogTo, this.transition);
+    }
+    const storm = this.storm;
+    const fog = this.scene.fog.color.copy(this.fogBase);
+    if (storm > 0) fog.lerp(this.stormColor, storm * 0.6);
+    if (this.flashK > 0) {
+      // Two quick blinks, like real lightning.
+      this.flashK = Math.max(0, this.flashK - dt * 3);
+      const k = this.flashK * (this.flashK > 0.55 && this.flashK < 0.7 ? 0.3 : 1);
+      fog.lerp(this.white, k * 0.55);
+      this.hemi.intensity = 1.6 + k * 3;
+      this.sunLight.intensity = 1.2 + k * 2;
     }
     // Fog closes in during a storm.
-    const storm = this.storm ?? 0;
     this.scene.fog.near = 30 - storm * 22;
     this.scene.fog.far = 125 - storm * 70;
 

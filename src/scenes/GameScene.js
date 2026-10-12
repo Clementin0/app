@@ -17,7 +17,7 @@ import { bindLayout } from '../ui/layout.js';
 import { COLORS } from '../ui/theme.js';
 
 const SWIPE = 42; // game pixels
-const EVENT_COLORS = { goldRush: 0xffd23f, meteors: 0xff6a00, ambush: 0xff3860 };
+const EVENT_COLORS = { goldRush: 0xffd23f, meteors: 0xff6a00, ambush: 0xff3860, storm: 0x9fb4ff, lowGravity: 0xd6a8ff };
 const HOLD_TO_FIRE = 0.2; // seconds
 const COUNTDOWN = 3;
 
@@ -49,6 +49,9 @@ const SFX_FOR_EVENT = {
   shieldRegen: 'powerup',
   explosion: 'explode',
   zone: 'levelUp',
+  turbo: 'turbo',
+  ramp: 'launch',
+  rocket: 'rocket',
 };
 
 /**
@@ -459,8 +462,14 @@ export class GameScene extends Phaser.Scene {
         if (pt.visible) this.hud.popup(pt.x, pt.y, e.combo >= 2 ? `+${e.points} ×${e.combo}` : `+${e.points}`, e.combo >= 2 ? '#ffb347' : '#ffd23f', e.combo >= 2 ? 34 : 28);
         break;
       }
-      case 'hurt':
       case 'smash':
+        haptics.medium();
+        if (e.turbo) {
+          const pt = this.view.screenPoint(e.x, e.y + 0.6, e.z, this.popupPoint);
+          if (pt.visible) this.hud.popup(pt.x, pt.y, `+${e.points}`, '#7ff3ff', 28);
+        }
+        break;
+      case 'hurt':
       case 'shieldBreak':
         haptics.medium();
         break;
@@ -506,6 +515,13 @@ export class GameScene extends Phaser.Scene {
       case 'jetpack':
         haptics.medium();
         this.hud.showMessage(t('jetpack'), COLORS.cyan, 900, 50);
+        break;
+      case 'turbo':
+        haptics.medium();
+        this.hud.showMessage(t('turbo'), COLORS.cyan, 800, 58);
+        break;
+      case 'ramp':
+        haptics.light();
         break;
       case 'meteorImpact':
         if (e.hit) haptics.medium();

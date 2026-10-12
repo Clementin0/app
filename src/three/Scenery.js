@@ -234,7 +234,7 @@ export function buildScenery(scene, theme, road, detail = 1) {
           spin: 0.4,
           place: () => {
             const s = 1.5 + R() * 7;
-            return { x: off(8, 60), y: 3 + R() * 34, sx: s, sy: s * (0.7 + R() * 0.5), sz: s, rx: R() * 3, ry: R() * 3, spinDir: R() < 0.5 ? -1 : 1 };
+            return { x: off(9 + s, 60 + s), y: 3 + R() * 34, sx: s, sy: s * (0.7 + R() * 0.5), sz: s, rx: R() * 3, ry: R() * 3, spinDir: R() < 0.5 ? -1 : 1 };
           },
           parts: [{ geometry: new IcosahedronGeometry(1, 0), material: lambert(0x4a4660, 0x6a2bd6, 0.25, { flatShading: true }) }],
         }),

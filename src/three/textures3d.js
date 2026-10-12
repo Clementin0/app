@@ -303,6 +303,30 @@ export function powerupIconTexture(type) {
           ctx.fill();
         }
         break;
+      case 'rockets':
+        // A rocket pointing up-right, with fins and a flame.
+        ctx.translate(c, c);
+        ctx.rotate(Math.PI / 4);
+        ctx.beginPath();
+        ctx.moveTo(0, -50);
+        ctx.quadraticCurveTo(18, -30, 16, 18);
+        ctx.lineTo(-16, 18);
+        ctx.quadraticCurveTo(-18, -30, 0, -50);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(-16, 2);
+        ctx.lineTo(-30, 30);
+        ctx.lineTo(-14, 24);
+        ctx.moveTo(16, 2);
+        ctx.lineTo(30, 30);
+        ctx.lineTo(14, 24);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(-9, 26);
+        ctx.lineTo(0, 52);
+        ctx.lineTo(9, 26);
+        ctx.fill();
+        break;
       default:
         ctx.font = 'bold 64px Arial, sans-serif';
         ctx.textAlign = 'center';
@@ -310,6 +334,37 @@ export function powerupIconTexture(type) {
         ctx.fillText('x2', c, c + 4);
     }
   });
+}
+
+/**
+ * Glowing chevrons pointing forward (turbo pads, ramps), on a dark plate.
+ * Repeats on T so the arrows can scroll.
+ */
+export function chevronTexture(color) {
+  return make(
+    `chev_${color}`,
+    128,
+    128,
+    (ctx, w, h) => {
+      ctx.fillStyle = '#0a0614';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = hex(color);
+      ctx.lineJoin = 'miter';
+      ctx.shadowColor = hex(color);
+      ctx.shadowBlur = 12;
+      for (const [lw, a] of [[22, 0.35], [12, 1]]) {
+        ctx.globalAlpha = a;
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.moveTo(18, h * 0.78);
+        ctx.lineTo(w / 2, h * 0.3);
+        ctx.lineTo(w - 18, h * 0.78);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    },
+    { repeat: true },
+  );
 }
 
 /** Pyramid faces: dark stone with glowing edges along the cone seams. */

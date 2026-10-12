@@ -4,8 +4,9 @@ import { DEFAULT_EQUIPPED, getItem } from '../config/cosmetics.js';
 import { basic, glow, lambert } from './models.js';
 
 /**
- * The player's runner: a rounded cube with eyes, little legs, a blaster in
- * hand, and an optional hat. Built from primitives so every combination of
+ * The player's runner: a rounded cube with eyes, arms, little legs with
+ * light-up soles, neon trims, a glowing energy core on the back, a blaster
+ * in hand, and an optional hat. Built from primitives so every combination of
  * skin / hat / weapon is available without art files. Faces +z.
  */
 
@@ -127,7 +128,19 @@ export function buildCharacter(equipped = DEFAULT_EQUIPPED) {
   const back = new Mesh(once('back', () => new BoxGeometry(0.5, 0.45, 0.12)), lambert(skin.accent, skin.glow, 0.3));
   back.position.set(0, 0.95, -0.48);
   const backLight = new Mesh(once('backLight', () => new BoxGeometry(0.36, 0.06, 0.02)), basic(skin.glow));
-  backLight.position.set(0, 1.05, -0.55);
+  backLight.position.set(0, 1.12, -0.55);
+  // Energy core on the back plate, and neon trims on the back corners.
+  const core = new Mesh(once('core', () => new CylinderGeometry(0.1, 0.1, 0.04, 16)), basic(skin.glow));
+  core.rotation.x = Math.PI / 2;
+  core.position.set(0, 0.9, -0.55);
+  const coreGlow = glow(skin.glow, 0.5);
+  coreGlow.position.set(0, 0.9, -0.62);
+  const trimGeo = once('trim', () => new BoxGeometry(0.05, 0.62, 0.04));
+  const trims = [-0.41, 0.41].map((x) => {
+    const t = new Mesh(trimGeo, basic(skin.glow));
+    t.position.set(x, 0.88, -0.43);
+    return t;
+  });
 
   // Eyes on the front (seen in the menu / shop preview).
   const eyeGeo = once('eye', () => new SphereGeometry(0.13, 12, 10));
@@ -142,13 +155,33 @@ export function buildCharacter(equipped = DEFAULT_EQUIPPED) {
   }
 
   const legGeo = once('leg', () => new BoxGeometry(0.24, 0.42, 0.28));
+  const soleGeo = once('sole', () => new BoxGeometry(0.27, 0.07, 0.34));
   const legs = [-0.22, 0.22].map((x) => {
     const pivot = new Group();
     pivot.position.set(x, 0.42, 0);
     const leg = new Mesh(legGeo, lambert(skin.accent, 0x000000));
     leg.position.y = -0.21;
-    pivot.add(leg);
+    // Light-up soles.
+    const sole = new Mesh(soleGeo, basic(skin.glow));
+    sole.position.set(0, -0.39, 0.02);
+    pivot.add(leg, sole);
     root.add(pivot);
+    return pivot;
+  });
+
+  // Arms: the free one swings, the other holds the blaster forward.
+  const armGeo = once('arm', () => new RoundedBoxGeometry(0.18, 0.44, 0.2, 2, 0.07));
+  const handGeo = once('hand', () => new SphereGeometry(0.11, 10, 8));
+  const arms = [0.56, -0.56].map((x, i) => {
+    const pivot = new Group();
+    pivot.position.set(x, 1.04, 0);
+    const arm = new Mesh(armGeo, bodyMat);
+    arm.position.y = -0.2;
+    const hand = new Mesh(handGeo, lambert(skin.accent, skin.glow, 0.15));
+    hand.position.y = -0.42;
+    pivot.add(arm, hand);
+    if (i === 1) pivot.rotation.set(-1.15, 0, 0.12); // reaching to the gun
+    bodyPivot.add(pivot);
     return pivot;
   });
 
@@ -172,19 +205,23 @@ export function buildCharacter(equipped = DEFAULT_EQUIPPED) {
   }
   jetpack.visible = false;
 
-  bodyPivot.add(body, belly, back, backLight, gun, hatObj, jetpack);
-  root.userData = { bodyPivot, legs, gun, muzzle: gun.userData.muzzle, skin, weapon, jetpack, flames };
+  bodyPivot.add(body, belly, back, backLight, core, coreGlow, ...trims, gun, hatObj, jetpack);
+  root.userData = { bodyPivot, legs, arms, coreGlow, gun, muzzle: gun.userData.muzzle, skin, weapon, jetpack, flames };
   return root;
 }
 
 /** Running / jumping / sliding pose. */
 export function animateCharacter(char, { time, grounded, sliding, vy, lean = 0 }) {
-  const { bodyPivot, legs } = char.userData;
+  const { bodyPivot, legs, arms, coreGlow } = char.userData;
   const run = grounded && !sliding;
   const swing = run ? Math.sin(time * 16) * 0.7 : grounded ? 0 : 0.5;
   legs[0].rotation.x = swing;
   legs[1].rotation.x = -swing;
   for (const l of legs) l.visible = !sliding;
+  // The free arm swings against the legs, and flies up in a jump.
+  if (arms) arms[0].rotation.x = run ? -swing * 0.9 : grounded ? 0 : -2.2;
+  if (arms) arms[0].rotation.z = grounded ? -0.08 : -0.5;
+  if (coreGlow) coreGlow.scale.setScalar(0.42 + Math.sin(time * 7) * 0.08);
   if (sliding) {
     bodyPivot.scale.set(1.15, 0.5, 1.1);
     bodyPivot.position.y = -0.25;

@@ -95,6 +95,9 @@ export class Stage {
       p.tint = 0.5;
       p.aberration = 0.006;
       p.tintColor = [1, 0.2, 0.85];
+    } else if (kind === 'flash') {
+      p.tint = 0.4;
+      p.tintColor = [0.85, 0.9, 1];
     }
   }
 
@@ -149,7 +152,8 @@ export class Stage {
     const u = this.grade.uniforms;
     u.tintAmount.value = p.tint;
     u.tint.value = p.tintColor;
-    u.aberration.value = 0.0015 + p.aberration;
+    // Turbo keeps a light aberration on, for the sense of speed.
+    u.aberration.value = 0.0015 + p.aberration + this.environment.boost * 0.0025;
     this.composer.render(step);
   }
 }

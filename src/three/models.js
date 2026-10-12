@@ -1,6 +1,7 @@
 import {
   AdditiveBlending,
   BoxGeometry,
+  BufferGeometry,
   Color,
   ConeGeometry,
   CylinderGeometry,
@@ -13,14 +14,19 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
+  Float32BufferAttribute,
   OctahedronGeometry,
+  PlaneGeometry,
   SphereGeometry,
   Sprite,
   SpriteMaterial,
   TorusGeometry,
 } from 'three';
 import { GAME3D } from '../config/game3d.config.js';
-import { crateTexture, dotTexture, hazardTexture, panelTexture, powerupIconTexture } from './textures3d.js';
+import { chevronTexture, crateTexture, dotTexture, hazardTexture, panelTexture, powerupIconTexture } from './textures3d.js';
+
+export const TURBO_COLOR = 0x00f5ff;
+export const RAMP_COLOR = 0xffd23f;
 
 /**
  * Procedural low-poly models for every entity type. Geometries and
@@ -474,11 +480,88 @@ function mine() {
   return g;
 }
 
+// ------------------------------------------------------------------ pads
+
+/** Chevrons lying flat (or on a slope), pointing the way forward (+z). */
+function chevronPlate(key, w, d, color) {
+  const tex = chevronTexture(color);
+  tex.repeat.set(1, Math.round(d / 1.1));
+  const plate = new Mesh(G(key, () => new PlaneGeometry(w, d)), M(`chev_${color}`, () => new MeshBasicMaterial({ map: tex, color: 0xffffff })));
+  plate.rotation.set(-Math.PI / 2, 0, Math.PI);
+  return plate;
+}
+
+function turboPad() {
+  const { w, h, d } = GAME3D.TURBO;
+  const g = new Group();
+  const base = new Mesh(box(w, h, d), lambert(0x140a24, 0x05020a));
+  base.position.y = h / 2;
+  const plate = chevronPlate('turboPlate', w - 0.25, d - 0.25, TURBO_COLOR);
+  plate.position.y = h + 0.01;
+  const edges = neonEdges(box(w, h, d), TURBO_COLOR);
+  edges.position.y = h / 2;
+  const light = glow(TURBO_COLOR, 2.6);
+  light.position.y = 0.5;
+  light.scale.y = 1.2;
+  g.add(base, plate, edges, light);
+  return g;
+}
+
+/** Triangular prism: foot at -z on the ground, lip at +z, h high. */
+function wedgeGeometry(w, h, d) {
+  const x0 = -w / 2;
+  const x1 = w / 2;
+  const z0 = -d / 2;
+  const z1 = d / 2;
+  const A = (x) => [x, 0, z0];
+  const B = (x) => [x, 0, z1];
+  const C = (x) => [x, h, z1];
+  const tri = (a, b, c) => [...a, ...b, ...c];
+  const quad = (a, b, c, d2) => [...tri(a, b, c), ...tri(a, c, d2)];
+  const pos = [
+    ...quad(A(x0), A(x1), C(x1), C(x0)), // slope
+    ...quad(B(x1), B(x0), C(x0), C(x1)), // lip face
+    ...quad(A(x1), A(x0), B(x0), B(x1)), // bottom
+    ...tri(A(x0), C(x0), B(x0)), // sides
+    ...tri(A(x1), B(x1), C(x1)),
+  ];
+  // Wind every triangle outwards (front faces lit, back faces culled).
+  const center = [0, h / 3, d / 6];
+  for (let i = 0; i < pos.length; i += 9) {
+    const [ax, ay, az, bx, by, bz, cx, cy, cz] = pos.slice(i, i + 9);
+    const n = [(by - ay) * (cz - az) - (bz - az) * (cy - ay), (bz - az) * (cx - ax) - (bx - ax) * (cz - az), (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)];
+    const out = [(ax + bx + cx) / 3 - center[0], (ay + by + cy) / 3 - center[1], (az + bz + cz) / 3 - center[2]];
+    if (n[0] * out[0] + n[1] * out[1] + n[2] * out[2] < 0) pos.splice(i + 3, 6, cx, cy, cz, bx, by, bz);
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new Float32BufferAttribute(pos, 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function ramp() {
+  const { w, h, d } = GAME3D.RAMP;
+  const g = new Group();
+  const wedge = G('ramp', () => wedgeGeometry(w, h, d));
+  const body = new Mesh(wedge, lambert(0x1c1030, 0x0a0418));
+  const edges = neonEdges(wedge, RAMP_COLOR);
+  const slope = Math.atan2(h, d);
+  const plate = chevronPlate('rampPlate', w - 0.3, Math.hypot(h, d) - 0.3, RAMP_COLOR);
+  plate.rotation.set(-(Math.PI / 2 + slope), 0, Math.PI);
+  plate.position.set(0, h / 2 + 0.02, 0);
+  const lip = new Mesh(box(w, 0.08, 0.12), basic(RAMP_COLOR));
+  lip.position.set(0, h + 0.02, d / 2 - 0.06);
+  const light = glow(RAMP_COLOR, 2.2);
+  light.position.set(0, h + 0.3, d / 2);
+  g.add(body, plate, edges, lip, light);
+  return g;
+}
+
 // --------------------------------------------------------------- pickups
 
 function coin() {
   const g = new Group();
-  const c = new Mesh(G('coin', () => new CylinderGeometry(0.4, 0.4, 0.1, 20)), lambert(0xffc83d, 0x7a4a00));
+  const c = new Mesh(G('coin', () => new CylinderGeometry(0.4, 0.4, 0.1, 20)), lambert(0xffc83d, 0xc98a00, 0.9));
   c.rotation.x = Math.PI / 2;
   c.position.y = 0.45;
   const halo = glow(0xffd23f, 1.1);
@@ -500,7 +583,7 @@ function gem() {
   return g;
 }
 
-const POWERUP_COLORS = { shield: 0x39ff88, magnet: 0xff3860, rapid: 0xff8a3d, heart: 0xff5ad9, double: 0xffd23f, jetpack: 0x7ff3ff };
+const POWERUP_COLORS = { shield: 0x39ff88, magnet: 0xff3860, rapid: 0xff8a3d, heart: 0xff5ad9, double: 0xffd23f, jetpack: 0x7ff3ff, rockets: 0xb6ff3d };
 
 function powerup(type) {
   const g = new Group();
@@ -526,6 +609,23 @@ export function playerShot(color) {
   const tint = new Mesh(G('shotGlow', () => new CylinderGeometry(0.14, 0.14, 1.4, 6)), basic(color, { transparent: true, opacity: 0.6, blending: AdditiveBlending, depthWrite: false }));
   tint.rotation.x = Math.PI / 2;
   g.add(tint, core);
+  return g;
+}
+
+/** Homing rocket: body, red nose, fins and a hot exhaust. Faces +z. */
+export function rocketShot() {
+  const g = new Group();
+  const body = new Mesh(G('rocketBody', () => new CylinderGeometry(0.08, 0.09, 0.5, 8)), lambert(0xd8d8e8, 0x202030));
+  body.rotation.x = Math.PI / 2;
+  const nose = new Mesh(G('rocketNose', () => new ConeGeometry(0.08, 0.2, 8)), basic(0xff3860));
+  nose.rotation.x = Math.PI / 2;
+  nose.position.z = 0.35;
+  const fins = new Mesh(box(0.34, 0.03, 0.14), basic(0xb6ff3d));
+  fins.position.z = -0.2;
+  const flame = glow(0xff8a3d, 0.9);
+  flame.position.z = -0.32;
+  g.add(body, nose, fins, flame);
+  g.userData = { flame };
   return g;
 }
 
@@ -576,6 +676,10 @@ export function buildEntity(e, theme) {
       return coin();
     case 'gem':
       return gem();
+    case 'turbo':
+      return turboPad();
+    case 'ramp':
+      return ramp();
     default:
       return powerup(e.type);
   }

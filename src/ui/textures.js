@@ -159,6 +159,39 @@ function drawPowerupBadges(scene) {
     ctx.textBaseline = 'middle';
     ctx.fillText('x2', c, c + 1);
   });
+  badge('rockets', '#b6ff3d', (ctx, c) => {
+    ctx.save();
+    ctx.translate(c, c);
+    ctx.rotate(Math.PI / 4);
+    ctx.beginPath();
+    ctx.moveTo(0, -18);
+    ctx.quadraticCurveTo(7, -10, 6, 7);
+    ctx.lineTo(-6, 7);
+    ctx.quadraticCurveTo(-7, -10, 0, -18);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-6, 0);
+    ctx.lineTo(-11, 11);
+    ctx.lineTo(-5, 9);
+    ctx.moveTo(6, 0);
+    ctx.lineTo(11, 11);
+    ctx.lineTo(5, 9);
+    ctx.moveTo(-3, 10);
+    ctx.lineTo(0, 18);
+    ctx.lineTo(3, 10);
+    ctx.fill();
+    ctx.restore();
+  });
+  badge('turbo', '#00f5ff', (ctx, c) => {
+    ctx.lineWidth = 6;
+    for (const dy of [-8, 5]) {
+      ctx.beginPath();
+      ctx.moveTo(c - 12, c + dy + 8);
+      ctx.lineTo(c, c + dy - 4);
+      ctx.lineTo(c + 12, c + dy + 8);
+      ctx.stroke();
+    }
+  });
   badge('jetpack', '#7ff3ff', (ctx, c) => {
     for (const x of [c - 8, c + 8]) {
       ctx.fillRect(x - 5, c - 14, 10, 18);

@@ -12,8 +12,10 @@ const POWERUPS = [
   { key: 'rapid', color: COLORS.orange, max: 7 },
   { key: 'double', color: COLORS.yellow, max: 10 },
   { key: 'jetpack', color: COLORS.cyan, max: 7 },
+  { key: 'rockets', color: 0xb6ff3d, max: 8 },
+  { key: 'turbo', color: COLORS.cyan, max: 2.6 },
 ];
-const EVENT_COLORS = { goldRush: COLORS.yellow, meteors: COLORS.orange, ambush: COLORS.red };
+const EVENT_COLORS = { goldRush: COLORS.yellow, meteors: COLORS.orange, ambush: COLORS.red, storm: 0x9fb4ff, lowGravity: 0xd6a8ff };
 
 /**
  * In-game HUD drawn by Phaser over the 3D view: score, best, hearts, coins,

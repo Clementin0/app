@@ -1,9 +1,10 @@
-import { AdditiveBlending, Group, Mesh, MeshBasicMaterial, SphereGeometry, TorusGeometry, Vector3 } from 'three';
+import { AdditiveBlending, ConeGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, RingGeometry, SphereGeometry, TorusGeometry, Vector3 } from 'three';
 import { DEFAULT_EQUIPPED, getItem } from '../config/cosmetics.js';
 import { laneX } from '../config/game3d.config.js';
 import { animateCharacter, buildCharacter } from './Character.js';
-import { buildEntity, enemyShot, flash, playerShot, poolKey } from './models.js';
+import { buildEntity, enemyShot, flash, playerShot, poolKey, RAMP_COLOR, rocketShot, TURBO_COLOR } from './models.js';
 import { Particles } from './Particles.js';
+import { chevronTexture } from './textures3d.js';
 
 const JET_FLAME = [0xff8a3d, 0xffd23f];
 const DRAW_DISTANCE = 100; // ~75% into the fog (Environment: 30..125 m)
@@ -12,6 +13,9 @@ const DRAW_DISTANCE = 100; // ~75% into the fog (Environment: 30..125 m)
 const X = (x) => -x;
 
 const EXPLOSION = [0xff8a3d, 0xffd23f, 0xff3860, 0xffffff];
+const BASE_FOV = 62;
+const RINGS = 10; // shockwave rings alive at once
+const ROCKET_SMOKE = [0xff8a3d, 0xffd23f, 0x9a9ab0];
 
 /**
  * Renders a LaneWorld in the shared Three.js stage: entity meshes (pooled
@@ -40,6 +44,24 @@ export class GameView {
 
     this.shieldBubble = new Mesh(new SphereGeometry(1.15, 20, 14), new MeshBasicMaterial({ color: 0x39ff88, transparent: true, opacity: 0.22, depthWrite: false, blending: AdditiveBlending }));
     this.shieldBubble.visible = false;
+    // Turbo: a cyan wake streaming behind the runner.
+    const wake = new ConeGeometry(0.6, 2.2, 16, 1, true);
+    wake.rotateX(-Math.PI / 2); // tip towards -z
+    wake.translate(0, 0, -1.1);
+    this.turboAura = new Mesh(wake, new MeshBasicMaterial({ color: TURBO_COLOR, transparent: true, opacity: 0, depthWrite: false, blending: AdditiveBlending, side: DoubleSide }));
+    this.turboAura.visible = false;
+    this.root.add(this.turboAura);
+    // Shockwave rings on explosions (pooled, one material each for the fade).
+    const ringGeo = new RingGeometry(0.82, 1, 40);
+    this.rings = Array.from({ length: RINGS }, () => {
+      const m = new Mesh(ringGeo, new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, blending: AdditiveBlending, side: DoubleSide }));
+      m.rotation.x = -Math.PI / 2;
+      m.visible = false;
+      m.userData = { t: 1, life: 0.4, size: 4 };
+      this.root.add(m);
+      return m;
+    });
+    this.ringIndex = 0;
     this.magnetRing = new Mesh(new TorusGeometry(1.3, 0.05, 6, 32), new MeshBasicMaterial({ color: 0xff3860, transparent: true, opacity: 0.6 }));
     this.magnetRing.rotation.x = Math.PI / 2;
     this.magnetRing.visible = false;
@@ -55,6 +77,12 @@ export class GameView {
     this.muzzleTimer = 0;
 
     this.shake = 0;
+    this.fov = BASE_FOV;
+    this.roll = 0;
+    this.stormK = 0;
+    this.stormOn = false;
+    this.lightningTimer = 3;
+    this.rocketMeshes = new Map();
     this.camPos = new Vector3(0, 4.2, -7.4);
     this.camLook = new Vector3(0, 1.3, 12);
     this.tmp = new Vector3();
@@ -72,6 +100,38 @@ export class GameView {
     this.character.visible = true;
     this.particles.clear();
     this.theme = this.stage.environment.setTheme(this.world.zone.index, true);
+    this.stormOn = false;
+    this.stormK = 0;
+    this.stage.environment.setStorm(0);
+  }
+
+  /** Expanding shockwave ring on the ground (or in the air) at a view position. */
+  ring(x, y, z, color, size = 4, life = 0.4) {
+    if (!this.effects) return;
+    const m = this.rings[this.ringIndex];
+    this.ringIndex = (this.ringIndex + 1) % this.rings.length;
+    m.position.set(x, y, z);
+    m.material.color.setHex(color);
+    m.userData.t = 0;
+    m.userData.life = life;
+    m.userData.size = size;
+    m.visible = true;
+  }
+
+  _updateRings(dt, speed) {
+    for (const m of this.rings) {
+      if (!m.visible) continue;
+      const u = m.userData;
+      u.t += dt / u.life;
+      if (u.t >= 1) {
+        m.visible = false;
+        continue;
+      }
+      const ease = 1 - (1 - u.t) * (1 - u.t);
+      m.scale.setScalar(0.3 + ease * u.size);
+      m.material.opacity = (1 - u.t) * 0.85;
+      m.position.z -= speed * dt;
+    }
   }
 
   // ---------------------------------------------------------------- pools
@@ -116,10 +176,28 @@ export class GameView {
         }
         case 'kill':
           ps.burst(X(e.x), e.y, e.z, EXPLOSION, e.enemy === 'crate' ? 22 : 34, 7, 0.8);
+          this.ring(X(e.x), 0.15, e.z, 0xff8a3d, e.enemy === 'crate' ? 2.6 : 3.6);
           this.addShake(0.12);
           break;
         case 'smash':
-          ps.burst(X(e.x), e.y, e.z, EXPLOSION, 30, 7, 0.7);
+          ps.burst(X(e.x), e.y, e.z, e.turbo ? [TURBO_COLOR, 0xffffff, 0xff8a3d] : EXPLOSION, e.turbo ? 40 : 30, e.turbo ? 9 : 7, 0.7, e.turbo ? { drift: 6 } : undefined);
+          if (e.turbo) {
+            this.ring(X(e.x), 0.2, e.z, TURBO_COLOR, 3.2, 0.3);
+            this.addShake(0.18);
+          }
+          break;
+        case 'turbo':
+          if (this.effects) this.stage.pulse('boost');
+          this.ring(px, 0.1, 0.5, TURBO_COLOR, 5, 0.45);
+          ps.burst(px, 0.4, 0.5, [TURBO_COLOR, 0xffffff], 30, 8, 0.5, { drift: -8 });
+          this.addShake(0.2);
+          break;
+        case 'ramp':
+          ps.burst(px, 0.8, 0.4, [RAMP_COLOR, 0xffffff], 26, 6, 0.5, { up: -2 });
+          this.ring(px, 0.8, 0.6, RAMP_COLOR, 2.6, 0.35);
+          break;
+        case 'rocket':
+          ps.burst(X(e.x), e.y, 0.2, ROCKET_SMOKE, 6, 2.5, 0.35);
           break;
         case 'hurt':
           this.addShake(0.45);
@@ -161,6 +239,8 @@ export class GameView {
           break;
         case 'bossDefeated':
           for (let i = 0; i < 4; i++) ps.burst(X(e.x) + (Math.random() - 0.5) * 4, e.y + Math.random(), e.z, EXPLOSION, 40, 10, 1.2);
+          this.ring(X(e.x), 0.2, e.z, 0xffd23f, 12, 0.8);
+          this.ring(X(e.x), 1.5, e.z, 0xff2bd6, 8, 0.6);
           this.addShake(1);
           break;
         case 'zone':
@@ -182,6 +262,7 @@ export class GameView {
           break;
         case 'meteorImpact':
           ps.burst(X(e.x), 0.4, e.z, [0xff8a3d, 0xffd23f, 0xff3860, 0xffffff], 40, 9, 0.8, { up: 4 });
+          this.ring(X(e.x), 0.12, e.z, 0xff6a00, 5, 0.5);
           this.addShake(e.hit ? 0.6 : 0.25);
           break;
         case 'bomberDrop':
@@ -192,7 +273,8 @@ export class GameView {
           break;
         case 'explosion':
           ps.burst(X(e.x), e.y, e.z, [0xff6a00, 0xffd23f, 0xffffff], 36, 9, 0.6);
-          this.addShake(0.2);
+          this.ring(X(e.x), Math.max(0.15, e.y - 0.6), e.z, e.rocket ? 0xb6ff3d : 0xff6a00, (e.radius ?? 2) * 1.6, 0.35);
+          this.addShake(e.rocket ? 0.12 : 0.2);
           break;
         case 'jetpack':
           ps.burst(px, 0.4, 0, [0xff8a3d, 0xffd23f, 0xffffff], 30, 6, 0.6);
@@ -205,6 +287,10 @@ export class GameView {
           break;
         case 'eventStart':
           this.addShake(0.15);
+          if (e.event === 'storm') this.stormOn = true;
+          break;
+        case 'eventEnd':
+          if (e.event === 'storm') this.stormOn = false;
           break;
         default:
           break;
@@ -272,7 +358,37 @@ export class GameView {
         this.particles.burst(X(p.x) + (Math.random() - 0.5) * 0.4, p.y + 0.5 + Math.random() * 0.5, -0.5, this.trailColors, 1, 0.6, 0.45);
       }
     }
+    // Turbo: aura, speed lines and sparks behind the runner.
+    const env = this.stage.environment;
+    const boost = w.state === 'dead' ? 0 : p.turboK;
+    env.boost = this.effects ? boost : 0;
+    this.turboAura.visible = boost > 0.02 && w.state !== 'dead';
+    if (this.turboAura.visible) {
+      this.turboAura.position.set(X(p.x), p.y + 0.8, -0.3);
+      this.turboAura.material.opacity = 0.13 * boost * (0.85 + Math.random() * 0.3);
+      if (!this.frozen && Math.random() < dt * 50 * boost) this.particles.burst(X(p.x) + (Math.random() - 0.5) * 0.8, p.y + 0.2 + Math.random() * 1.2, -0.8, [TURBO_COLOR, 0xffffff], 1, 1, 0.3, { drift: -10 });
+    }
+    // Storm: fog and weather ease in and out; lightning now and then.
+    const stormGoal = this.stormOn && w.state !== 'dead' ? 1 : 0;
+    if (Math.abs(stormGoal - this.stormK) > 0.001) {
+      this.stormK += Math.max(-dt / 2, Math.min(dt / 2, stormGoal - this.stormK));
+      env.setStorm(this.stormK);
+    }
+    if (this.stormK > 0.6 && !this.frozen && this.effects) {
+      this.lightningTimer -= dt;
+      if (this.lightningTimer <= 0) {
+        this.lightningTimer = 2 + Math.random() * 4;
+        env.lightning();
+        this.stage.pulse('flash');
+      }
+    }
+    // Pads: the chevrons flow forward.
+    const flow = (this.time * 1.6) % 1;
+    chevronTexture(TURBO_COLOR).offset.y = -flow;
+    chevronTexture(RAMP_COLOR).offset.y = -flow * 0.7;
+
     this.particles.update(dt, speed);
+    this._updateRings(dt, speed);
 
     for (const [obj, t] of this.flashes) {
       const left = t - dt;
@@ -416,12 +532,14 @@ export class GameView {
   _syncShots() {
     const w = this.world;
     const stamp = this.frameStamp;
-    this._syncShotList(w.shots, this.shotMeshes, this.shotKey, this.makeShot, stamp);
+    this._syncShotList(w.shots, this.shotMeshes, this.shotKey, this.makeShot, stamp, (s) => !s.rocket);
+    this._syncShotList(w.shots, this.rocketMeshes, 'rocket', rocketShot, stamp, (s) => s.rocket);
     this._syncShotList(w.eshots, this.eshotMeshes, 'eshot', enemyShot, stamp);
   }
 
-  _syncShotList(list, map, key, make, stamp) {
+  _syncShotList(list, map, key, make, stamp, filter) {
     for (const s of list) {
+      if (filter && !filter(s)) continue;
       let obj = map.get(s.id);
       if (!obj) {
         obj = this._acquire(key, make);
@@ -430,6 +548,12 @@ export class GameView {
       obj.userData.stamp = stamp;
       obj.position.set(X(s.x), s.y, s.z);
       obj.rotation.y = s.vx ? Math.atan2(-s.vx, s.speed) : 0;
+      if (s.rocket) {
+        // Nose along the flight; a smoke trail behind.
+        obj.rotation.x = -Math.atan2(s.vy, s.speed);
+        obj.userData.flame.scale.setScalar(0.7 + Math.random() * 0.5);
+        if (!this.frozen && Math.random() < 0.6) this.particles.burst(X(s.x), s.y, s.z - 0.4, ROCKET_SMOKE, 1, 0.8, 0.35);
+      }
     }
     for (const [id, obj] of map) {
       if (obj.userData.stamp !== stamp) {
@@ -440,12 +564,13 @@ export class GameView {
   }
 
   _updateCamera(dt) {
-    const p = this.world.player;
+    const w = this.world;
+    const p = w.player;
     const cam = this.stage.camera;
     const k = Math.min(1, dt * 7);
     const px = X(p.x);
-    // The camera rises with the jetpack so the flight stays in frame.
-    const lift = p.jetpack > 0 ? 0.85 : 0.3;
+    // The camera rises with the jetpack (and big ramp jumps) so the flight stays in frame.
+    const lift = p.jetpack > 0 || p.y > 2.5 ? 0.85 : 0.3;
     this.tmp.set(px * 0.55 + this.cameraOffset.x, 4.1 + p.y * lift + this.cameraOffset.y, -7.2);
     this.camPos.lerp(this.tmp, k);
     this.tmp.set(px * 0.7, 1.3 + p.y * (p.jetpack > 0 ? 0.55 : 0.25), 12);
@@ -458,13 +583,38 @@ export class GameView {
       this.shake = Math.max(0, this.shake - dt * 2.5);
     }
     cam.lookAt(this.camLook);
+    if (!this.effects) return;
+    // Wider field of view with speed, much wider in turbo.
+    const speedK = Math.min(1, Math.max(0, (w.speed - 15) / 19));
+    const fov = BASE_FOV + speedK * 5 + p.turboK * 12;
+    this.fov += (fov - this.fov) * Math.min(1, dt * 4);
+    if (Math.abs(cam.fov - this.fov) > 0.01) {
+      cam.fov = this.fov;
+      cam.updateProjectionMatrix();
+    }
+    // A slight roll into lane changes (from the runner's sideways speed).
+    const vx = dt > 0 ? (px - (this.lastPx ?? px)) / dt : 0;
+    this.lastPx = px;
+    const roll = Math.max(-0.06, Math.min(0.06, vx * 0.0035));
+    this.roll += (roll - this.roll) * Math.min(1, dt * 8);
+    cam.rotateZ(this.roll);
   }
 
   dispose() {
+    // The camera and environment are shared with the other views.
+    const cam = this.stage.camera;
+    if (cam.fov !== BASE_FOV) {
+      cam.fov = BASE_FOV;
+      cam.updateProjectionMatrix();
+    }
+    this.stage.environment.boost = 0;
+    this.stage.environment.setStorm(0);
     this.particles.dispose();
     this.stage.scene.remove(this.root);
+    for (const m of this.rings) m.material.dispose();
+    this.rings[0].geometry.dispose();
     this.root.traverse((o) => {
-      if (o.isMesh && (o === this.shieldBubble || o === this.magnetRing)) {
+      if (o.isMesh && (o === this.shieldBubble || o === this.magnetRing || o === this.turboAura)) {
         o.geometry.dispose();
         o.material.dispose();
       }

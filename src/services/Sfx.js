@@ -56,6 +56,18 @@ const SOUNDS = {
   ],
   slide: [{ type: 'noise', dur: 0.18, vol: 0.06 }],
   bump: [{ type: 'triangle', from: 160, to: 110, dur: 0.08, vol: 0.12 }],
+  turbo: [
+    { type: 'sawtooth', from: 120, to: 900, dur: 0.45, vol: 0.1 },
+    { type: 'noise', dur: 0.35, vol: 0.1 },
+  ],
+  launch: [
+    { type: 'square', from: 220, to: 880, dur: 0.22, vol: 0.1 },
+    { type: 'triangle', from: 880, to: 1320, dur: 0.18, vol: 0.08, delay: 0.12 },
+  ],
+  rocket: [
+    { type: 'noise', dur: 0.16, vol: 0.07 },
+    { type: 'sine', from: 500, to: 1400, dur: 0.16, vol: 0.05 },
+  ],
   newBest: [
     { type: 'triangle', from: 784, to: 784, dur: 0.1, vol: 0.12 },
     { type: 'triangle', from: 1047, to: 1047, dur: 0.1, vol: 0.12, delay: 0.1 },
