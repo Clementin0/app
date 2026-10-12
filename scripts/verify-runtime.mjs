@@ -470,6 +470,91 @@ async function main() {
     const skin = await evaluate((h) => window[h].scene('Game').view.character.userData.skin.id, H);
     check('Bought skin used in game', skin === 'bubblegum', skin);
     await shot('09-run');
+
+    // v4 mechanics, rendered: turbo pad, ramp, homing rockets, storm, low gravity.
+    step = 'v4 turbo';
+    const clearRoad = (w) => {
+      w.entities = [];
+      w.eshots = [];
+      w.event = null;
+      w.distanceToNext = 80;
+      w.nextPowerupAt = Infinity;
+      w.player.invulnerable = 0;
+      w._damage = () => {};
+    };
+    await world((w, src) => {
+      new Function('w', `(${src})(w)`)(w);
+      w._addEntity({ type: 'turbo', lane: w.player.lane, dz: 0 }, 10);
+      w._addEntity({ type: 'wall', lane: w.player.lane, dz: 0 }, 30);
+    }, clearRoad.toString());
+    await waitWorld((w) => w.stats.smashed >= 1, null, 30000);
+    const turbo = await evaluate((h) => {
+      const g = window[h].scene('Game');
+      return { state: g.world.state, turboK: +g.world.player.turboK.toFixed(2), fov: +g.view.stage.camera.fov.toFixed(1), boost: +g.view.stage.environment.boost.toFixed(2) };
+    }, H);
+    check('Turbo pad: faster, smashes a wall, wider field of view', turbo.state === 'running' && turbo.turboK > 0 && turbo.fov > 62 && turbo.boost > 0, JSON.stringify(turbo));
+    await shot('11-turbo');
+
+    step = 'v4 ramp';
+    await waitWorld((w) => w.player.turbo === 0 && w.player.turboK === 0, null, 30000);
+    await world((w, src) => {
+      new Function('w', `(${src})(w)`)(w);
+      w._addEntity({ type: 'ramp', lane: w.player.lane, dz: 0 }, 12);
+      window.__track = { maxY: 0 };
+    }, clearRoad.toString());
+    await waitWorld((w) => {
+      window.__track.maxY = Math.max(window.__track.maxY, w.player.y);
+      return w.stats.ramps >= 1 && w.player.grounded && window.__track.maxY > 3;
+    }, null, 30000);
+    check('Ramp: launched high into the air', true, `peak ${(await evaluate(() => window.__track.maxY)).toFixed(2)} m`);
+
+    step = 'v4 rockets';
+    await world((w, src) => {
+      new Function('w', `(${src})(w)`)(w);
+      w.player.rockets = 6;
+      window.__track = { rockets: 0, target: w._addEntity({ type: 'walker', lane: w.player.lane === 0 ? 2 : 0, dz: 0 }, 45).id };
+    }, clearRoad.toString());
+    await waitWorld((w) => {
+      window.__track.rockets = Math.max(window.__track.rockets, w.shots.filter((s) => s.rocket).length);
+      return !w.entities.some((e) => e.id === window.__track.target);
+    }, null, 30000);
+    const rockets = await evaluate(() => window.__track.rockets);
+    check('Homing rockets: hit an enemy in another lane', rockets >= 1, `rockets in flight: ${rockets}`);
+
+    step = 'v4 storm';
+    await world((w, src) => {
+      new Function('w', `(${src})(w)`)(w);
+      w.zone.index = 1;
+      w._emit('zone', { index: 1 });
+      w._startEvent('storm');
+      w.event.duration = 1e9;
+    }, clearRoad.toString());
+    await waitFor((h) => window[h].scene('Game').view.stormK > 0.6, H, 30000);
+    const storm = await evaluate((h) => {
+      const g = window[h].scene('Game');
+      const env = g.view.stage.environment;
+      return { fogNear: +env.scene.fog.near.toFixed(1), weather: env.weather.geometry.drawRange.count, base: env.weather.count, mult: g.world.scoreMult };
+    }, H);
+    check('Storm: closer fog, more weather particles, double score', storm.fogNear < 20 && storm.weather > storm.base && storm.mult === 2, JSON.stringify(storm));
+    await shot('12-storm');
+
+    step = 'v4 low gravity';
+    await world((w, src) => {
+      w._endEvent();
+      new Function('w', `(${src})(w)`)(w);
+      w._startEvent('lowGravity');
+      w.event.duration = 1e9;
+      window.__track = { maxY: 0 };
+      w.jump();
+    }, clearRoad.toString());
+    await waitWorld((w) => {
+      window.__track.maxY = Math.max(window.__track.maxY, w.player.y);
+      return w.player.grounded && window.__track.maxY > 0;
+    }, null, 30000);
+    const lowY = await evaluate(() => window.__track.maxY);
+    // A normal jump peaks at ~1.95 m (sampled lower at headless frame rates).
+    check('Low gravity: a much higher jump', lowY > 2.05, `peak ${lowY.toFixed(2)} m`);
+    await waitFor((h) => window[h].scene('Game').view.stormK === 0, H, 30000);
   } catch (err) {
     check(`Unexpected failure during "${step}"`, false, err.message.split('\n')[0]);
     await shot('99-failure').catch(() => {});
