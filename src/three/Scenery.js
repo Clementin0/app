@@ -151,7 +151,8 @@ export function buildScenery(scene, theme, road, detail = 1) {
           capacity: n(14),
           place: () => {
             const b = 9 + R() * 16;
-            return { x: off(16, 50), y: (b * 0.75) / 2, sx: b, sy: b * 0.75, sz: b, ry: Math.PI / 4 };
+            // Placed by their inner edge, so no prop ever reaches the road.
+            return { x: off(6 + b * 0.71, 50), y: (b * 0.75) / 2, sx: b, sy: b * 0.75, sz: b, ry: Math.PI / 4 };
           },
           parts: [
             { geometry: new ConeGeometry(0.71, 1, 4, 1), material: lambert(0xffffff, 0xffffff, 0.55, { map: pyr, emissiveMap: pyr }) },
@@ -161,7 +162,11 @@ export function buildScenery(scene, theme, road, detail = 1) {
         }),
         new PropLayer(scene, {
           capacity: n(18),
-          place: () => ({ x: off(7, 45), y: -0.2, sx: 10 + R() * 22, sy: 1.5 + R() * 4, sz: 7 + R() * 16, ry: R() * Math.PI }),
+          place: () => {
+            const sx = 10 + R() * 22;
+            const sz = 7 + R() * 16;
+            return { x: off(4 + Math.max(sx, sz), 40), y: -0.2, sx, sy: 1.5 + R() * 4, sz, ry: R() * Math.PI };
+          },
           parts: [{ geometry: new SphereGeometry(1, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2), material: lambert(theme.building, theme.side, 0.6) }],
         }),
       ];
@@ -178,18 +183,22 @@ export function buildScenery(scene, theme, road, detail = 1) {
         }),
         new PropLayer(scene, {
           capacity: n(12),
-          place: () => ({ x: off(14, 45), y: 0.5, sx: 6 + R() * 10, sy: 2 + R() * 4, sz: 6 + R() * 9, ry: R() * Math.PI }),
+          place: () => {
+            const sx = 6 + R() * 10;
+            const sz = 6 + R() * 9;
+            return { x: off(5 + Math.max(sx, sz), 40), y: 0.5, sx, sy: 2 + R() * 4, sz, ry: R() * Math.PI };
+          },
           parts: [{ geometry: new DodecahedronGeometry(1, 0), material: lambert(0xe6fbff, 0x6ad8ff, 0.35, { flatShading: true }) }],
         }),
       ];
     case 'inferno':
       return [
         new PropLayer(scene, {
-          capacity: n(10),
+          capacity: n(16),
           place: () => {
             const s = 10 + R() * 14;
             const h = 7 + R() * 12;
-            return { x: off(18, 45), y: h / 2, sx: s, sy: h, sz: s };
+            return { x: off(6 + s, 45), y: h / 2, sx: s, sy: h, sz: s };
           },
           parts: [
             { geometry: new CylinderGeometry(0.22, 1, 1, 10, 1), material: lambert(0x2a0b06, 0x3a0500, 0.8, { flatShading: true }) },
@@ -223,7 +232,10 @@ export function buildScenery(scene, theme, road, detail = 1) {
         }),
         new PropLayer(scene, {
           capacity: n(14),
-          place: () => ({ x: off(10, 40), y: -0.3, sx: 3 + R() * 6, sy: 2 + R() * 4, sz: 3 + R() * 6 }),
+          place: () => {
+            const sx = 3 + R() * 6;
+            return { x: off(4 + sx, 40), y: -0.3, sx, sy: 2 + R() * 4, sz: 3 + R() * 6 };
+          },
           parts: [{ geometry: new SphereGeometry(1, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), material: lambert(0x5a1050, 0xff2bd6, 0.35) }],
         }),
       ];
@@ -233,8 +245,8 @@ export function buildScenery(scene, theme, road, detail = 1) {
           capacity: n(28),
           spin: 0.4,
           place: () => {
-            const s = 1.5 + R() * 7;
-            return { x: off(9 + s, 60 + s), y: 3 + R() * 34, sx: s, sy: s * (0.7 + R() * 0.5), sz: s, rx: R() * 3, ry: R() * 3, spinDir: R() < 0.5 ? -1 : 1 };
+            const s = 1.2 + R() * 4.8;
+            return { x: off(10 + s, 60), y: 3 + R() * 30, sx: s, sy: s * (0.7 + R() * 0.5), sz: s, rx: R() * 3, ry: R() * 3, spinDir: R() < 0.5 ? -1 : 1 };
           },
           parts: [{ geometry: new IcosahedronGeometry(1, 0), material: lambert(0x4a4660, 0x6a2bd6, 0.25, { flatShading: true }) }],
         }),

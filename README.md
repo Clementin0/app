@@ -6,12 +6,14 @@ Modelli 3D, texture, effetti sonori e colonna sonora sono generati proceduralmen
 | Menu | Tutorial | Gioco |
 | --- | --- | --- |
 | ![Menu](docs/screenshots/menu.png) | ![Tutorial](docs/screenshots/tutorial.png) | ![Gioco](docs/screenshots/gameplay.png) |
-| **Pioggia di meteoriti** | **Boss (Scorpione delle dune)** | **Scelta del potenziamento** |
-| ![Pioggia di meteoriti](docs/screenshots/meteors.png) | ![Boss](docs/screenshots/boss.png) | ![Potenziamenti](docs/screenshots/perks.png) |
-| **Modalità** | **Negozio** | **Ricompensa giornaliera** |
-| ![Modalità](docs/screenshots/modes.png) | ![Negozio](docs/screenshots/shop.png) | ![Ricompensa giornaliera](docs/screenshots/daily.png) |
-| **Game Over** | **Impostazioni** | |
-| ![Game over](docs/screenshots/game-over.png) | ![Impostazioni](docs/screenshots/settings.png) | |
+| **Pedana turbo (Inferno)** | **Rampa sopra i muri (Ghiaccio)** | **Tempesta di sabbia (Deserto)** |
+| ![Turbo](docs/screenshots/turbo.png) | ![Rampa](docs/screenshots/ramp.png) | ![Tempesta](docs/screenshots/storm.png) |
+| **Gravità ridotta (Orbita)** | **Pioggia di meteoriti** | **Boss (Scorpione delle dune)** |
+| ![Gravità ridotta](docs/screenshots/low-gravity.png) | ![Pioggia di meteoriti](docs/screenshots/meteors.png) | ![Boss](docs/screenshots/boss.png) |
+| **Scelta del potenziamento** | **Modalità** | **Negozio** |
+| ![Potenziamenti](docs/screenshots/perks.png) | ![Modalità](docs/screenshots/modes.png) | ![Negozio](docs/screenshots/shop.png) |
+| **Ricompensa giornaliera** | **Game Over** | **Impostazioni** |
+| ![Ricompensa giornaliera](docs/screenshots/daily.png) | ![Game over](docs/screenshots/game-over.png) | ![Impostazioni](docs/screenshots/settings.png) |
 
 ## Scelte di progetto
 
@@ -23,6 +25,26 @@ Modelli 3D, texture, effetti sonori e colonna sonora sono generati proceduralmen
 | Nome app | Neon Dash |
 | App ID | `com.clementin0.neondash` (modificabile in `capacitor.config.json`) |
 | Lingue | Italiano e inglese (in base al dispositivo, modificabile nelle impostazioni) |
+
+## Grafica
+
+- **Post-processing** (qualità media e alta): bloom sui neon, color grading, aberrazione cromatica, vignettatura e scanline. Lo schermo pulsa di rosso quando vieni colpito, di magenta quando arriva un boss e di ciano col turbo.
+- **Uno scenario per zona**, disegnato con l'instancing (pochi draw call anche con centinaia di oggetti):
+  - Città Neon: grattacieli con finestre accese, luci sui tetti e insegne al neon;
+  - Deserto: piramidi con la punta luminosa e dune;
+  - Ghiaccio: cristalli sfaccettati e iceberg;
+  - Inferno: vulcani con crateri di lava e rocce incandescenti;
+  - Abisso: alghe con anelli bioluminescenti e coralli;
+  - Orbita: asteroidi che ruotano, piloni luminosi e un pianeta con gli anelli.
+- **Orizzonte synthwave**: montagne in wireframe, sole con alone, cielo stellato. Lungo la strada ci sono archi al neon e lampioni, che si scuriscono vicino alla camera per non abbagliare. La strada è bagnata, con riflessi e linee luminose.
+- **Meteo per zona**: pioggia, sabbia, neve, braci, bolle, polvere di stelle.
+- **Camera viva**: il campo visivo si allarga con la velocità (molto col turbo), la camera si inclina leggermente nei cambi di corsia, e ad alta velocità compaiono le linee di velocità.
+- **Effetti**:
+  - onde d'urto sulle esplosioni;
+  - scia di fumo dei razzi;
+  - scia del turbo;
+  - lampi durante la tempesta.
+- **Personaggio**: braccia animate, suole luminose, profili al neon e un nucleo di energia pulsante sulla schiena.
 
 ## Gameplay
 
@@ -47,11 +69,15 @@ Un solo dito può concatenare direzioni diverse (es. sinistra e poi su), ma uno 
 - **Torrette** piazzate sulla strada, che sparano plasma lungo la loro corsia.
 - **Bombardieri**: volano davanti a te, cambiano corsia e sganciano mine.
 - Ostacoli: barriere da saltare, travi laser da passare scivolando, muri che bloccano la corsia, piattaforme su cui correre, **barriere mobili** che scorrono da un lato all'altro della strada e **voragini** da saltare (cadere è fatale).
+- **Pedane turbo**: passaci sopra e per 2,6 secondi corri al 165% della velocità e sei invincibile. Sfondi muri, casse e nemici (+20 punti per ostacolo) e voli sopra le voragini. Dopo la pedana la corsia è piena di cose da sfondare: senza turbo conviene cambiare corsia.
+- **Rampe**: ti lanciano a più di 4 m d'altezza sopra un muro, attraverso una scia di monete nel cielo. Le altre corsie restano percorribili.
 - Ogni nemico abbattuto dà punti (che compaiono sopra di lui) e lascia cadere monete. Le uccisioni ravvicinate creano una **combo** (fino a ×8).
 - **Eventi** durante la corsa: due per zona, a 280 m e a 600 m, mai lo stesso due volte di fila.
   - **Corsa all'oro**: monete su tutte le corsie e strada più veloce.
   - **Imboscata**: la strada rallenta e arrivano tre ondate di nemici; se li abbatti tutti, +30 monete.
   - **Pioggia di meteoriti** (dalla zona 2): un cerchio rosso segna dove cadrà ogni meteorite; esci dalla corsia prima dell'impatto.
+  - **Tempesta** (Deserto, Ghiaccio e Città dal secondo giro): sabbia, neve o pioggia fitta, nebbia vicina e lampi. I punti valgono doppio e gli ostacoli arrivano un po' più distanziati.
+  - **Gravità ridotta** (Abisso e Orbita): salti altissimi e lunghissimi e monete sospese in aria. Un salto iniziato in bassa gravità resta lento fino all'atterraggio.
 - **Jetpack** (power-up raro): voli sopra tutto per 7 secondi raccogliendo monete in cielo, e i colpi scendono a colpire i nemici a terra.
 - **Boss**: dopo 900 m di ogni zona arriva un boss con nome e barra della vita colorata. Ogni zona ha il suo, con aspetto e attacchi propri:
 
@@ -68,7 +94,7 @@ Un solo dito può concatenare direzioni diverse (es. sinistra e poi su), ma uno 
 - **Potenziamenti a scelta**: dopo ogni boss il gioco si ferma e propone **3 carte a caso** tra 13: cuore extra, calibro (+danno), raffica, colpi perforanti, tripla canna, calamita, scudo rigenerante, fortuna, esplosivi, combo infinita, tempo dilatato, vampiro, portafortuna. Valgono fino alla fine della corsa e alcuni si sommano (ad esempio calibro fino a 4 livelli), quindi ogni partita prende una strada diversa. Quelli attivi compaiono in basso a sinistra.
 - **6 zone** a tema con colori, musica e scenario diversi: Città Neon, Deserto al tramonto, Griglia di ghiaccio, Inferno, Abisso, Orbita. La difficoltà sale a ogni zona.
 - Hai **3 cuori** (5 con i potenziamenti). Nemici e plasma tolgono un cuore; schiantarsi contro un ostacolo è fatale.
-- Power-up: **scudo**, **magnete**, **fuoco rapido**, **punti doppi**, **cuore extra**, **jetpack**.
+- Power-up: **scudo**, **magnete**, **fuoco rapido**, **punti doppi**, **cuore extra**, **jetpack** e **razzi a ricerca**. I razzi durano 8 secondi: partono dalle spalle, inseguono il nemico più vicino (anche il boss) e la loro esplosione colpisce chi sta intorno.
 
 **Modalità** (pulsante "MODALITÀ" nel menu)
 
@@ -87,7 +113,7 @@ Un solo dito può concatenare direzioni diverse (es. sinistra e poi su), ma uno 
 - Si paga in monete; gli oggetti rari costano gemme. Un video con ricompensa dà **+50 monete** ogni 3 minuti.
 - **Ricompensa giornaliera**: al primo accesso di ogni giorno una scala di 7 giorni (da 50 a 250 monete, gemme al 4° e al 7° giorno). Saltare un giorno fa ripartire la serie. Il premio si può **raddoppiare** guardando un video; se il video non arriva alla fine si riceve comunque il premio normale.
 - **Livello del giocatore**: ogni corsa dà esperienza (distanza, nemici, boss, eventi, potenziamenti). Ogni livello regala monete, ogni 5 livelli anche gemme. Il livello con la sua barra è nel menu e nel Game Over.
-- **Missioni**: 3 obiettivi attivi alla volta (abbattere droni, arieti o boss, superare eventi, combo, distanza, monete...). Danno monete o gemme e, una volta completati, vengono sostituiti da missioni più difficili.
+- **Missioni**: 3 obiettivi attivi alla volta (abbattere droni, arieti o boss, superare eventi, prendere pedane turbo, volare dalle rampe, sfondare ostacoli col turbo, combo, distanza, monete...). Danno monete o gemme e, una volta completati, vengono sostituiti da missioni più difficili.
 - **Punteggio** = distanza + monete e gemme + bonus di uccisioni e boss. High score, distanza migliore, monete, gemme, oggetti, potenziamenti, missioni, statistiche e impostazioni sono salvati in **LocalStorage**.
 
 **Interfaccia e sistema**
@@ -97,7 +123,12 @@ Un solo dito può concatenare direzioni diverse (es. sinistra e poi su), ma uno 
   - **Gioco**, con HUD per punti, cuori, monete, avanzamento della zona (o tempo dell'evento), power-up, potenziamenti attivi, combo, barra del boss e pausa;
   - **Pausa**: riprendi con conto alla rovescia, ricomincia, menu, impostazioni;
   - **Game Over**: riepilogo con uccisioni, zona raggiunta (o boss sconfitti), esperienza guadagnata e barra del livello, avvisi per livelli, missioni e sfide completate, **Continua**, **Rigioca** (nella stessa modalità), **Menu**.
-- **Impostazioni**: musica, effetti sonori, vibrazione, lingua, **qualità grafica** (bassa, media, alta: risoluzione, antialiasing, densità della città, particelle) e, se richiesto dal GDPR, consenso privacy.
+- **Impostazioni**: musica, effetti sonori, vibrazione, lingua, consenso privacy (se richiesto dal GDPR) e **qualità grafica**:
+  - bassa: niente post-processing;
+  - media: bloom e grading;
+  - alta: anche il multisampling e la risoluzione piena.
+
+  La qualità regola anche la densità dello scenario, il meteo e le particelle.
 - **Grafica automatica**: finché il giocatore non sceglie un livello, il gioco misura i frame al secondo durante la partita e, se il telefono scende sotto i 42 fps, abbassa da solo la qualità di un livello. Nelle impostazioni compare la scritta "AUTOMATICA".
 - **Audio** sintetizzato in tempo reale: ogni zona ha la sua progressione di accordi e la musica si intensifica durante il boss. **Vibrazione** (Capacitor Haptics) su colpi, danni, boss e acquisti.
 - Tasto indietro di Android: chiude le impostazioni, mette in pausa / riprende, torna al menu, esce dall'app. Il gioco va in pausa da solo quando l'app passa in background.
@@ -127,24 +158,27 @@ Dettagli di implementazione ([`src/services/AdService.js`](src/services/AdServic
 ```
 src/
   config/admob.config.js    ID AdMob (test/produzione) e regole di frequenza
-  config/game3d.config.js   corsie, fisica, velocità, armi, nemici, ostacoli, boss, eventi, jetpack, punteggi
-  config/zones.js           temi delle 6 zone (colori, scenario, musica)
+  config/game3d.config.js   corsie, fisica, velocità, armi, nemici, ostacoli, boss, eventi, jetpack,
+                            turbo, rampe, razzi, punteggi
+  config/zones.js           temi delle 6 zone (colori, scenario, meteo, musica)
   config/perks.js           i 13 potenziamenti a scelta dopo i boss
   config/cosmetics.js       catalogo del negozio: skin, cappelli, armi, scie
   config/upgrades.js        potenziamenti e loadout della partita
   i18n.js                   testi in italiano e inglese
   logic3d/                  simulazione pura (testabile in Node, senza Phaser né Three.js)
     LaneWorld.js            corsie, salto/scivolata, spari, nemici, boss, zone, eventi, jetpack,
-                            potenziamenti, modalità, danni, pickup, revive
+                            turbo, rampe, razzi, potenziamenti, modalità, danni, pickup, revive
     LaneSpawner.js          pattern di ostacoli, nemici e monete
     Autopilot3D.js          IA per la demo del menu e i test
     Missions.js             missioni con ricompense e livelli crescenti
     Tutorial.js             tutorial interattivo della prima partita (tempo che si ferma, gesti)
   logic/ScoreManager.js     punteggio della partita
   logic/Progression.js      esperienza e livelli del giocatore
-  three/                    rendering 3D: Stage (renderer e qualità), Environment (strada, città, cielo),
-                            models (ostacoli, nemici, boss, pickup), Character, Particles,
-                            GameView (partita e demo), PreviewView (anteprima del negozio)
+  three/                    rendering 3D: Stage (renderer, post-processing e qualità), GradeShader,
+                            Environment (strada, cielo, montagne, archi, nebbia, lampi),
+                            Scenery (scenari instanziati delle zone), Weather (meteo, linee di velocità),
+                            models (ostacoli, nemici, boss, pickup, pedane, rampe, razzi), Character,
+                            Particles, GameView (partita e demo), PreviewView (anteprima del negozio)
   services/                 AdService, MockAdMob, SaveData (LocalStorage), Sfx e Music (Web Audio),
                             Haptics, Platform (tasto indietro, background), DailyReward,
                             AutoQuality (qualità grafica adattiva), DailyChallenge (sfida del giorno)
@@ -165,7 +199,7 @@ store/                      icona 512×512 e feature graphic 1024×500 per il Pl
 ```bash
 npm install            # dipendenze
 npm run dev            # gioco nel browser con hot reload (annunci simulati)
-npm test               # 130 test unitari (mondo 3D, armi, nemici, ostacoli, eventi, jetpack, 6 boss, potenziamenti, modalità, livelli, tutorial, missioni, ricompensa giornaliera, grafica adattiva, salvataggi, negozio, lingue, annunci)
+npm test               # 146 test unitari (mondo 3D, armi, nemici, ostacoli, eventi, jetpack, turbo, rampe, razzi, tempesta, gravità ridotta, 6 boss, potenziamenti, modalità, livelli, tutorial, missioni, ricompensa giornaliera, grafica adattiva, salvataggi, negozio, lingue, annunci)
 npm run build          # bundle web di produzione in dist/
 npm run verify         # gioca la build in Chromium headless e verifica tutto il flusso
 npm run cap:sync       # build + npx cap sync android + configurazione Android
@@ -173,7 +207,7 @@ npm run cap:open       # apre il progetto in Android Studio
 npm run release:check  # controlla che la release non usi gli ID AdMob di test
 ```
 
-`npm run verify` emula un telefono in landscape con touch e gioca davvero, con swipe e tocchi. Controlla 51 punti, tra cui:
+`npm run verify` emula un telefono in landscape con touch e gioca davvero, con swipe e tocchi. Controlla 56 punti, tra cui:
 - avvio dei due renderer (Three.js e Phaser) e demo 3D nel menu;
 - ricompensa giornaliera riscossa una volta sola;
 - banner nel menu, nascosto in gioco;
@@ -186,6 +220,7 @@ npm run release:check  # controlla che la release non usi gli ID AdMob di test
 - revive con video, una sola seconda possibilità per partita, interstitial alla terza partita completata;
 - impostazioni: vibrazione, qualità grafica, lingua;
 - negozio: anteprima 3D, acquisto di skin e potenziamento, +50 monete con video, skin e danno applicati in partita;
+- novità della 4.0: pedana turbo (velocità, muro sfondato, campo visivo più largo), lancio dalla rampa, razzi a ricerca che colpiscono un nemico in un'altra corsia, tempesta (nebbia, meteo più fitto, punti doppi) e salto in gravità ridotta;
 - musica attiva e assenza di errori in console.
 
 Gli screenshot finiscono in `verify-output/`.
