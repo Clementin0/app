@@ -480,7 +480,9 @@ async function main() {
       w.distanceToNext = 80;
       w.nextPowerupAt = Infinity;
       w.player.invulnerable = 0;
+      // Nobody steers in these steps: no crash may end the run meanwhile.
       w._damage = () => {};
+      w._crash = () => {};
     };
     await world((w, src) => {
       new Function('w', `(${src})(w)`)(w);
