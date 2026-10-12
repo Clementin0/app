@@ -56,8 +56,15 @@ export class Stage {
 
   /** Bloom + grading chain (medium / high). Low renders straight to the screen. */
   _createComposer() {
-    this.composer?.dispose();
+    if (this.composer) {
+      // The composer only frees its own targets: the passes hold the rest
+      // (bloom mips, shader materials).
+      for (const pass of this.composer.passes) pass.dispose?.();
+      this.composer.dispose();
+    }
     this.composer = null;
+    this.bloom = null;
+    this.grade = null;
     if (!this.quality.post) return;
     const size = this.renderer.getDrawingBufferSize(new Vector2());
     const target = new WebGLRenderTarget(Math.max(1, size.x), Math.max(1, size.y), { type: HalfFloatType, samples: this.quality.msaa });

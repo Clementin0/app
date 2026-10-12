@@ -545,6 +545,7 @@ async function main() {
       w._endEvent();
       new Function('w', `(${src})(w)`)(w);
       w._startEvent('lowGravity');
+      w.event.delay = 0; // no warm-up: the road was just cleared
       w.event.duration = 1e9;
       window.__track = { maxY: 0 };
       w.jump();

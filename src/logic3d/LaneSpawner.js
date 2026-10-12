@@ -289,8 +289,10 @@ export const PATTERNS3D = [
         const t = i * 0.12;
         items.push({ type: 'coin', lane, dz: lip + speed * t, y: y0 + v * t - (g * t * t) / 2 + 0.9 });
       }
-      // The next row starts after the landing (a low gravity flight is long).
-      const airtime = (v + Math.sqrt(v * v + 2 * g * y0)) / g;
+      // The next row starts after the landing, even after a long low gravity
+      // flight (the event can start while this row is on the road).
+      const flight = (vv, gg) => (vv + Math.sqrt(vv * vv + 2 * gg * y0)) / gg;
+      const airtime = Math.max(flight(v, g), flight(RAMP.launch * EVENTS.lowGravity.jump, PLAYER.gravity * EVENTS.lowGravity.gravity));
       return { length: Math.max(wallAt + 1, lip + speed * airtime + 2), items };
     },
   },

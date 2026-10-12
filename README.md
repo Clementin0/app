@@ -199,7 +199,7 @@ store/                      icona 512×512 e feature graphic 1024×500 per il Pl
 ```bash
 npm install            # dipendenze
 npm run dev            # gioco nel browser con hot reload (annunci simulati)
-npm test               # 146 test unitari (mondo 3D, armi, nemici, ostacoli, eventi, jetpack, turbo, rampe, razzi, tempesta, gravità ridotta, 6 boss, potenziamenti, modalità, livelli, tutorial, missioni, ricompensa giornaliera, grafica adattiva, salvataggi, negozio, lingue, annunci)
+npm test               # 153 test unitari (mondo 3D, armi, nemici, ostacoli, eventi, jetpack, turbo, rampe, razzi, tempesta, gravità ridotta, 6 boss, potenziamenti, modalità, livelli, tutorial, missioni, ricompensa giornaliera, grafica adattiva, salvataggi, negozio, lingue, annunci)
 npm run build          # bundle web di produzione in dist/
 npm run verify         # gioca la build in Chromium headless e verifica tutto il flusso
 npm run cap:sync       # build + npx cap sync android + configurazione Android

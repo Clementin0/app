@@ -23,6 +23,12 @@ function run(w, seconds, each) {
 }
 const place = (w, item, z) => w._addEntity({ dz: 0, lane: 1, ...item }, z);
 const events = (w, type) => w.drainEvents().filter((e) => e.type === type);
+/** Starts an event right away (low gravity without its warm-up delay). */
+function startEvent(w, type) {
+  w._startEvent(type);
+  w.event.delay = 0;
+  w.event.duration = 1e9;
+}
 /** Places a spawner pattern's items at z0, as the world does. */
 function placePattern(w, key, z0, extra = {}) {
   const pattern = PATTERNS3D.find((p) => p.key === key);
@@ -51,7 +57,7 @@ describe('v4 turbo pads', () => {
     });
     expect(w.player.turbo).toBe(0);
     run(w, 2);
-    expect(w.speed).toBeCloseTo(w._speedAt(w.time), 5);
+    expect(w.speed).toBeCloseTo(w._speedAt(w.courseTime), 5);
     expect(w.player.turboK).toBe(0);
   });
 
@@ -132,8 +138,7 @@ describe('v4 ramps', () => {
 
   it('the ramp launch is softer in low gravity, still clearing the wall', () => {
     const w = quietWorld();
-    w._startEvent('lowGravity');
-    w.event.duration = 1e9;
+    startEvent(w, 'lowGravity');
     placePattern(w, 'rampJump', 12, { lowGravity: true });
     const ramp = w.entities.find((e) => e.type === 'ramp');
     w.player.lane = ramp.lane;
@@ -252,7 +257,7 @@ describe('v4 run events', () => {
   it('low gravity: higher, longer jumps, still floaty if the event ends mid-air', () => {
     const flight = (low, endMidAir = false) => {
       const w = quietWorld();
-      if (low) w._startEvent('lowGravity');
+      if (low) startEvent(w, 'lowGravity');
       w.jump();
       let maxY = 0;
       let t = 0;
@@ -327,5 +332,127 @@ describe('v4 autopilot and fairness', () => {
         expect(w.state, `${event} seed ${seed}: ${w.deathCause}`).toBe('running');
       }
     }
+  });
+});
+
+describe('v4 review fixes', () => {
+  /** A bot that only rides ramps: it moves into the lane of the next ramp, never jumps. */
+  const rampRider = (w) => {
+    const next = w.entities.filter((e) => e.type === 'ramp' && !e.used && e.z > -2).sort((a, b) => a.z - b.z)[0];
+    if (next && next.z > 12 && next.lane !== w.player.lane && w.player.grounded) {
+      if (next.lane < w.player.lane) w.moveLeft();
+      else w.moveRight();
+    }
+  };
+
+  it('ramp rows spawned during a turbo are still cleared once it is over', () => {
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const w = new LaneWorld({ rng: createRng(seed) });
+      w.spawner.next = (level, speed) => w.spawner._finish('rampJump', PATTERNS3D.find((p) => p.key === 'rampJump').build({ rng: w.courseRng, speed, level, drones: 0 }), speed, level);
+      w.nextPowerupAt = Infinity;
+      w._damage = () => {}; // only crashes count here (no hearts lost to events)
+      run(w, 8, rampRider);
+      w.player.turbo = TURBO.duration; // rows spawn ahead while in turbo
+      run(w, 30, rampRider);
+      expect(w.state, `seed ${seed}: ${w.deathCause}`).toBe('running');
+      expect(w.stats.ramps).toBeGreaterThan(5);
+    }
+  });
+
+  it('a jump on the slope, or right before the ramp, still launches over the wall', () => {
+    for (const speed of [18, 28]) {
+      for (const jumpAt of [-1, 0.5, 1.5]) {
+        const w = quietWorld();
+        w._speedAt = () => speed;
+        w.speed = w.courseSpeed = speed;
+        placePattern(w, 'rampJump', 12, { speed });
+        const ramp = w.entities.find((e) => e.type === 'ramp');
+        w.player.lane = ramp.lane;
+        w.player.x = ramp.x;
+        let jumped = false;
+        run(w, 2.5, (world) => {
+          // jumpAt: meters of slope already climbed (negative: before the foot).
+          if (!jumped && -(ramp.z - ramp.d / 2) >= jumpAt) {
+            jumped = true;
+            world.jump();
+          }
+        });
+        expect(w.state, `speed ${speed}, jump at ${jumpAt}: ${w.deathCause}`).toBe('running');
+        expect(w.stats.ramps).toBe(1);
+      }
+    }
+  });
+
+  it('taking a turbo pad does not change the course', () => {
+    const course = (turbo) => {
+      const w = new LaneWorld({ rng: createRng(5), courseSeed: 99 });
+      w.player.invulnerable = 1e9;
+      const rows = [];
+      let count = 0;
+      run(w, 70, (world, i) => {
+        world.player.invulnerable = 1e9;
+        if (turbo && i === 600) world.player.turbo = TURBO.duration;
+        if (world.spawner.count !== count) {
+          count = world.spawner.count;
+          rows.push(`${world.spawner.history.at(-1)}@${Math.round(world.distance / 10)}`);
+        }
+      });
+      return rows;
+    };
+    const a = course(false);
+    const b = course(true);
+    const n = Math.min(a.length, b.length);
+    expect(n).toBeGreaterThan(40);
+    // Same rows at the same places (to the rounding of the spawn distance).
+    const keys = (rows) => rows.slice(0, n).map((r) => r.split('@')[0]);
+    expect(keys(b)).toEqual(keys(a));
+  });
+
+  it('low gravity waits for the rows already on the road', () => {
+    const w = quietWorld();
+    w._startEvent('lowGravity');
+    expect(w.event.delay).toBeGreaterThan(2);
+    expect(w.lowGravity).toBeNull();
+    run(w, w.event.delay + 0.1);
+    expect(w.lowGravity).not.toBeNull();
+    expect(w.event.duration).toBeCloseTo(EVENTS.lowGravity.duration + w.event.delay, 5);
+  });
+
+  it('a jump started just before low gravity ends stays floaty', () => {
+    const w = quietWorld();
+    startEvent(w, 'lowGravity');
+    w.jump();
+    w._endEvent();
+    let t = 0;
+    while (!w.player.grounded || t === 0) {
+      w.step(DT);
+      t += DT;
+    }
+    expect(t).toBeGreaterThan(1);
+  });
+
+  it('rockets skip drones flying away and retarget once past a target', () => {
+    const w = quietWorld();
+    const leaving = place(w, { type: 'drone', lane: 1 }, 22);
+    leaving.state = 'leave';
+    const walker = place(w, { type: 'walker', lane: 1 }, 40);
+    expect(w._rocketTarget(0, 0)).toBe(walker);
+    const s = { x: 0, y: 1.6, z: 30, vx: 0, vy: 0, speed: ROCKETS.speed, target: place(w, { type: 'crate', lane: 0 }, 10).id };
+    w._steerRocket(s, DT);
+    expect(s.target).toBe(walker.id);
+    expect(Math.abs(s.vx)).toBeLessThan(5);
+  });
+
+  it('storms and double points also count for coins', () => {
+    const coinPoints = (setup) => {
+      const w = quietWorld();
+      setup(w);
+      const before = w.score.score;
+      w._collect({ type: 'coin', x: 0, y: 0.5, z: 0 });
+      return w.score.score - before;
+    };
+    const base = coinPoints(() => {});
+    expect(coinPoints((w) => startEvent(w, 'storm'))).toBe(base * EVENTS.storm.score);
+    expect(coinPoints((w) => (w.player.double = 5))).toBe(base * 2);
   });
 });

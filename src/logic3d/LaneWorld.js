@@ -90,6 +90,11 @@ export class LaneWorld {
   reset() {
     const { SPEED, POWERUPS } = this.cfg;
     this.time = 0;
+    // Course clock: runs faster in turbo (as the distance does), so the
+    // course (rows, power-ups, events) depends on the distance only, not
+    // on whether the player took a turbo pad.
+    this.courseTime = 0;
+    this.courseSpeed = SPEED.start;
     this.distance = 0;
     this.speed = SPEED.start;
     this.level = 0;
@@ -212,6 +217,7 @@ export class LaneWorld {
   _doJump() {
     const p = this.player;
     p.vy = this.cfg.PLAYER.jumpVelocity * (this.lowGravity?.jump ?? 1);
+    p.floaty = !!this.lowGravity; // stays floaty until landing
     p.grounded = false;
     p.slide = 0;
     p.bufferJump = 0;
@@ -262,18 +268,22 @@ export class LaneWorld {
     const { SPEED } = this.cfg;
 
     this.time += delta;
-    const level = Math.min(8, Math.floor(this.time / 18) + this.zone.index * 2);
+    const turbo = 1 + (this.cfg.TURBO.speed - 1) * this.player.turboK;
+    const courseDelta = delta * turbo;
+    this.courseTime += courseDelta;
+    const level = Math.min(8, Math.floor(this.courseTime / 18) + this.zone.index * 2);
     if (level > this.level) {
       this.level = level;
       this._emit('levelUp', { level });
     }
-    this.speed = this._speedAt(this.time);
+    this.courseSpeed = this._speedAt(this.courseTime);
+    this.speed = this.courseSpeed * turbo;
     const dz = this.speed * delta;
     this.distance += dz;
     this.score.addDistance(dz * (this.player.double > 0 ? 2 : 1) * this.scoreMult);
 
-    this._updateZone(delta);
-    this._updateEvent(delta);
+    this._updateZone(courseDelta);
+    this._updateEvent(courseDelta);
     this._scrollAndSpawn(delta, dz);
     this._updatePlayer(delta);
     this._updateWeapon(delta);
@@ -288,14 +298,16 @@ export class LaneWorld {
     if (this.score.checkPassedBest()) this._emit('newBest', { score: this.score.score });
   }
 
-  /** Running speed: ramp, slowed by the "slowmo" perk, scaled by events, turbo and modifiers. */
+  /**
+   * Course speed (without the turbo) at a course time: ramp, slowed by the
+   * "slowmo" perk, scaled by events and modifiers. Rows are laid out for it.
+   */
   _speedAt(time) {
-    const { SPEED, TURBO } = this.cfg;
+    const { SPEED } = this.cfg;
     const top = SPEED.max * (this.perks.slowmo ? PERK_TUNING.slowmo : 1);
     const base = top - (top - SPEED.start) * Math.exp(-time / SPEED.rampTime);
     const event = this.event ? (this.cfg.EVENTS[this.event.type]?.speed ?? 1) : 1;
-    const turbo = 1 + (TURBO.speed - 1) * (this.player?.turboK ?? 0);
-    return base * event * turbo * this.modifiers.speed;
+    return base * event * this.modifiers.speed;
   }
 
   /** Score multiplier of the run (daily modifiers, storm event). */
@@ -304,9 +316,13 @@ export class LaneWorld {
     return this.modifiers.score * storm;
   }
 
-  /** Low gravity event in progress (its tuning), or null. */
+  /**
+   * Low gravity in effect (its tuning), or null. It starts once the rows
+   * laid out for normal gravity have gone by (the event's `delay`).
+   */
   get lowGravity() {
-    return this.event?.type === 'lowGravity' ? this.cfg.EVENTS.lowGravity : null;
+    const ev = this.event;
+    return ev?.type === 'lowGravity' && ev.t >= ev.delay ? this.cfg.EVENTS.lowGravity : null;
   }
 
   // ------------------------------------------------------------- perks
@@ -336,7 +352,7 @@ export class LaneWorld {
   resumeSpawns() {
     this.spawnPaused = false;
     this.distanceToNext = 50 - this.cfg.WORLD.spawnZ;
-    this.nextPowerupAt = this.time + this.courseRng.range(...this.cfg.POWERUPS.spawnEvery);
+    this.nextPowerupAt = this.courseTime + this.courseRng.range(...this.cfg.POWERUPS.spawnEvery);
     this.zone.start = this.distance;
   }
 
@@ -373,7 +389,9 @@ export class LaneWorld {
 
   _startEvent(type) {
     const cfg = this.cfg.EVENTS[type];
-    this.event = { type, t: 0, duration: cfg.duration, waves: 0, waveTimer: 1.2, spawned: [], nextMeteor: 0.5 };
+    // Low gravity waits for the rows already on the road (laid out for normal jumps).
+    const delay = type === 'lowGravity' ? this.cfg.WORLD.spawnZ / Math.max(1, this.courseSpeed) : 0;
+    this.event = { type, t: 0, delay, duration: cfg.duration + delay, waves: 0, waveTimer: 1.2, spawned: [], nextMeteor: 0.5 };
     this.lastEvent = type;
     this._emit('eventStart', { event: type, duration: cfg.duration });
   }
@@ -618,18 +636,21 @@ export class LaneWorld {
       const z0 = WORLD.spawnZ + this.distanceToNext;
       const ev = this.event?.type;
       const quiet = bossPhase || this.zone.cooldown > 0 || ev === 'ambush' || ev === 'meteors' || this.mode === 'bossRush';
+      // Rows are laid out for the course speed: one spawned in turbo is
+      // reached after it, at the normal speed.
+      const speed = this.courseSpeed;
       const pattern =
         ev === 'goldRush'
-          ? this.spawner.goldRush(this.speed)
+          ? this.spawner.goldRush(speed)
           : quiet
-            ? this.spawner.coinsOnly(this.speed)
-            : this.spawner.next(this.level, this.speed, { lowGravity: ev === 'lowGravity' });
+            ? this.spawner.coinsOnly(speed)
+            : this.spawner.next(this.level, speed, { lowGravity: ev === 'lowGravity' });
       for (const item of pattern.items) this._addEntity(item, z0);
 
-      if (!bossPhase && !ev && this.time >= this.nextPowerupAt) {
+      if (!bossPhase && !ev && this.courseTime >= this.nextPowerupAt) {
         const type = this._pickPowerup();
         this._addEntity({ type, lane: this.courseRng.int(0, 2), dz: pattern.length + pattern.gapAfter / 2, y: 0.5 }, z0);
-        this.nextPowerupAt = this.time + this.courseRng.range(...POWERUPS.spawnEvery) * (this.perks.lucky ? PERK_TUNING.luckyEvery : 1);
+        this.nextPowerupAt = this.courseTime + this.courseRng.range(...POWERUPS.spawnEvery) * (this.perks.lucky ? PERK_TUNING.luckyEvery : 1);
       }
       // In a storm the fog is close: rows come a bit further apart.
       this.distanceToNext += pattern.length + pattern.gapAfter * (ev === 'storm' ? this.cfg.EVENTS.storm.gap : 1);
@@ -813,6 +834,7 @@ export class LaneWorld {
     let surface = 0;
     let ramp = null;
     let passed = null; // the ramp we were on last step, now behind its lip
+    let skimmed = null; // a ramp whose lip we fly just over (a jump on or right before it)
     const box = this.playerBox();
     for (const e of this.entities) {
       if (e.dead) continue;
@@ -831,6 +853,9 @@ export class LaneWorld {
           surface = top;
           ramp = e;
         } else if (u > 1 && e.id === p.rampId) passed = e;
+        // This step crossed the launch point, in the air not far above the slope.
+        const prevU = u - (this.speed * dt) / e.d;
+        if (u >= this.cfg.RAMP.at && prevU < this.cfg.RAMP.at && p.y > e.h * Math.min(1, u) && p.y < e.h + 2.3) skimmed = e;
       }
     }
 
@@ -854,6 +879,7 @@ export class LaneWorld {
     // at low frame rate jumped past the lip).
     if (ramp && p.grounded && -(ramp.z - ramp.d / 2) / ramp.d >= this.cfg.RAMP.at) this._launch(ramp);
     else if (passed && !passed.used && !ramp) this._launch(passed);
+    else if (skimmed && !skimmed.used && !p.grounded) this._launch(skimmed);
     p.rampId = ramp && p.grounded ? ramp.id : null;
   }
 
@@ -861,7 +887,8 @@ export class LaneWorld {
     const p = this.player;
     ramp.used = true;
     p.y = Math.max(p.y, ramp.h * this.cfg.RAMP.at);
-    p.vy = this.cfg.RAMP.launch * (this.lowGravity?.jump ?? 1);
+    p.vy = Math.max(p.vy, this.cfg.RAMP.launch * (this.lowGravity?.jump ?? 1));
+    p.floaty = !!this.lowGravity;
     p.grounded = false;
     p.slide = 0;
     p.bufferJump = 0;
@@ -884,7 +911,7 @@ export class LaneWorld {
       return;
     }
     e.dead = true;
-    const points = Math.round(this.cfg.TURBO.smashPoints * this.scoreMult);
+    const points = Math.round(this.cfg.TURBO.smashPoints * (this.player.double > 0 ? 2 : 1) * this.scoreMult);
     this.score.addBonus(points);
     this.stats.smashed += 1;
     this._emit('smash', { id: e.id, enemy: e.type, x: e.x, y: e.y + e.h / 2, z: e.z, turbo: true, points });
@@ -947,7 +974,7 @@ export class LaneWorld {
     let best = null;
     let bestScore = Infinity;
     const consider = (e) => {
-      if (!e || e.dead || e.leaving || e.z < z + 3 || e.z > ROCKETS.range) return;
+      if (!e || e.dead || e.leaving || e.state === 'leave' || e.z < z + 3 || e.z > ROCKETS.range) return;
       const score = e.z - z + Math.abs(e.x - x) * 4;
       if (score < bestScore) {
         best = e;
@@ -961,7 +988,8 @@ export class LaneWorld {
 
   _steerRocket(s, dt) {
     let t = this.boss && this.boss.id === s.target ? this.boss : this.entities.find((e) => e.id === s.target);
-    if (!t || t.dead || t.leaving) {
+    // Gone, flying away, or already behind the rocket: pick another one.
+    if (!t || t.dead || t.leaving || t.state === 'leave' || t.z < s.z + 0.5) {
       t = this._rocketTarget(s.x, s.z);
       s.target = t?.id ?? null;
     }
@@ -1347,19 +1375,20 @@ export class LaneWorld {
   _collect(e) {
     const p = this.player;
     const { POWERUPS } = this.cfg;
-    const mult = p.double > 0 ? 2 : 1;
+    // Double points, storm and daily multipliers also count for coins and gems.
+    const points = (p.double > 0 ? 2 : 1) * this.scoreMult;
     const lucky = this.perks.lucky ? PERK_TUNING.luckyDuration : 1;
     switch (e.type) {
       case 'coin': {
         // "Coins" perk: a chance per level that the coin counts double.
         const extra = this.perks.coins && this.rng.chance(0.5 * this.perks.coins) ? 1 : 0;
         this.score.addCoin(1 + extra);
-        if (mult > 1) this.score.addBonus(this.cfg.SCORE.coin);
+        if (points > 1) this.score.addBonus(Math.round(this.cfg.SCORE.coin * (points - 1)));
         break;
       }
       case 'gem':
         this.score.addGem(1);
-        if (mult > 1) this.score.addBonus(this.cfg.SCORE.gem);
+        if (points > 1) this.score.addBonus(Math.round(this.cfg.SCORE.gem * (points - 1)));
         break;
       case 'shield':
         p.shield = true;

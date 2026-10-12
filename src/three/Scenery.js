@@ -83,7 +83,7 @@ export class PropLayer {
     for (const p of this.parts) {
       for (let i = 0; i < this.count; i++) {
         const it = this.items[i];
-        const t = p.transform ? p.transform(it) : it;
+        const t = p.transform ? p.transform(it, (p.scratch ??= {})) : it;
         d.position.set(t.x ?? it.x, t.y ?? it.y, t.z ?? it.z);
         d.rotation.set(t.rx ?? it.rx ?? 0, t.ry ?? it.ry ?? 0, t.rz ?? it.rz ?? 0);
         d.scale.set(t.sx ?? it.sx, t.sy ?? it.sy, t.sz ?? it.sz);
@@ -139,6 +139,20 @@ const R = Math.random;
 const side = () => (R() < 0.5 ? -1 : 1);
 const lambert = (color, emissive = 0x000000, emissiveIntensity = 1, extra = {}) => new MeshLambertMaterial({ color, emissive, emissiveIntensity, ...extra });
 
+/**
+ * Fills a part's scratch transform (reused every frame: no allocations).
+ * Unset rotations fall back to the item's own.
+ */
+function set(o, y, sx, sy, sz, rx, rz) {
+  o.y = y;
+  o.sx = sx;
+  o.sy = sy;
+  o.sz = sz;
+  if (rx !== undefined) o.rx = rx;
+  if (rz !== undefined) o.rz = rz;
+  return o;
+}
+
 /** Builds the prop layers of a zone theme. `road` = half width of the road. */
 export function buildScenery(scene, theme, road, detail = 1) {
   const n = (c) => Math.max(2, Math.round(c * detail));
@@ -157,7 +171,7 @@ export function buildScenery(scene, theme, road, detail = 1) {
           parts: [
             { geometry: new ConeGeometry(0.71, 1, 4, 1), material: lambert(0xffffff, 0xffffff, 0.55, { map: pyr, emissiveMap: pyr }) },
             // Glowing capstone (bloom).
-            { geometry: new OctahedronGeometry(0.5, 0), material: new MeshBasicMaterial({ color: theme.line }), transform: (it) => ({ y: it.sy * 1.02, sx: it.sx * 0.06, sy: it.sx * 0.08, sz: it.sx * 0.06 }) },
+            { geometry: new OctahedronGeometry(0.5, 0), material: new MeshBasicMaterial({ color: theme.line }), transform: (it, o) => set(o, it.sy * 1.02, it.sx * 0.06, it.sx * 0.08, it.sx * 0.06) },
           ],
         }),
         new PropLayer(scene, {
@@ -203,7 +217,7 @@ export function buildScenery(scene, theme, road, detail = 1) {
           parts: [
             { geometry: new CylinderGeometry(0.22, 1, 1, 10, 1), material: lambert(0x2a0b06, 0x3a0500, 0.8, { flatShading: true }) },
             // Molten crater (bloom).
-            { geometry: new SphereGeometry(1, 12, 6), material: new MeshBasicMaterial({ color: 0xff6a00 }), transform: (it) => ({ y: it.sy, sx: it.sx * 0.2, sy: it.sx * 0.06, sz: it.sx * 0.2 }) },
+            { geometry: new SphereGeometry(1, 12, 6), material: new MeshBasicMaterial({ color: 0xff6a00 }), transform: (it, o) => set(o, it.sy, it.sx * 0.2, it.sx * 0.06, it.sx * 0.2) },
           ],
         }),
         new PropLayer(scene, {
@@ -226,7 +240,7 @@ export function buildScenery(scene, theme, road, detail = 1) {
             ...[0.35, 0.7].map((f) => ({
               geometry: new TorusGeometry(1, 0.18, 6, 16),
               material: new MeshBasicMaterial({ color: f < 0.5 ? theme.line : 0xff5ad9 }),
-              transform: (it) => ({ y: it.sy * f, rx: Math.PI / 2, rz: 0, sx: it.sx * 2.2, sy: it.sx * 2.2, sz: it.sx * 2.2 }),
+              transform: (it, o) => set(o, it.sy * f, it.sx * 2.2, it.sx * 2.2, it.sx * 2.2, Math.PI / 2, 0),
             })),
           ],
         }),
@@ -258,7 +272,7 @@ export function buildScenery(scene, theme, road, detail = 1) {
           },
           parts: [
             { geometry: new BoxGeometry(1, 1, 1), material: lambert(0x2a2448, 0x140a33, 1) },
-            { geometry: new BoxGeometry(1, 1, 1), material: new MeshBasicMaterial({ color: theme.line }), transform: (it) => ({ y: it.sy, sx: 1.4, sy: 0.4, sz: 1.4 }) },
+            { geometry: new BoxGeometry(1, 1, 1), material: new MeshBasicMaterial({ color: theme.line }), transform: (it, o) => set(o, it.sy, 1.4, 0.4, 1.4) },
           ],
         }),
       ];
@@ -278,7 +292,7 @@ export function buildScenery(scene, theme, road, detail = 1) {
               geometry: new BoxGeometry(1, 1, 1),
               material: new MeshBasicMaterial({ color: theme.window[1] ?? theme.line }),
               // Roof beacon on some towers (hidden by a zero scale on the others).
-              transform: (it) => ({ y: it.sy + 0.4, sx: it.beacon ? 0.5 : 0, sy: it.beacon ? 0.8 : 0, sz: it.beacon ? 0.5 : 0 }),
+              transform: (it, o) => set(o, it.sy + 0.4, it.beacon ? 0.5 : 0, it.beacon ? 0.8 : 0, it.beacon ? 0.5 : 0),
             },
           ],
         }),

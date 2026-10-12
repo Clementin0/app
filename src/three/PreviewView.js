@@ -58,7 +58,10 @@ export class PreviewView {
 
     this.character.rotation.y = Math.PI + Math.sin(this.time * 0.6) * 0.9;
     animateCharacter(this.character, { time: this.time, grounded: true, sliding: false, vy: 0 });
+    // Standing still: legs and the free arm at rest.
     for (const leg of this.character.userData.legs) leg.rotation.x = 0;
+    const arm = this.character.userData.arms?.[0];
+    if (arm) arm.rotation.set(0, 0, -0.08);
     this.ring.rotation.z += dt;
     if (Math.random() < dt * 8) this.particles.burst(px + (Math.random() - 0.5) * 2, 0.1, (Math.random() - 0.5) * 2, this.trail, 1, 0.8, 1.2, { up: 2.5 });
     this.particles.update(dt, 0);
