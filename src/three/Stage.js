@@ -167,6 +167,13 @@ export class Stage {
     u.tintAmount.value = Math.max(p.tint, od * 0.4);
     u.tint.value = p.tint > od * 0.4 ? p.tintColor : [1, 0.35, 0.95];
     u.saturation.value = 1.12 + od * 0.35;
+    u.time.value += step;
+    // Speed blur in turbo and overdrive; zone looks (heat haze, underwater).
+    const env = this.environment;
+    u.radial.value = env.boost * 0.9 + od * 0.35;
+    const zone = env.theme?.id;
+    u.haze.value += ((zone === 'inferno' ? 1 : 0) - u.haze.value) * Math.min(1, step * 2);
+    u.underwater.value += ((zone === 'abyss' ? 1 : 0) - u.underwater.value) * Math.min(1, step * 2);
     // Turbo keeps a light aberration on, for the sense of speed.
     u.aberration.value = 0.0015 + p.aberration + this.environment.boost * 0.0025;
     this.composer.render(step);

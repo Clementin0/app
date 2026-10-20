@@ -14,6 +14,7 @@ import {
   SpriteMaterial,
   TorusGeometry,
 } from 'three';
+import { withRim } from './shading.js';
 import { pyramidTexture, signTexture, windowsTexture } from './textures3d.js';
 
 /**
@@ -137,7 +138,8 @@ class SignLayer {
 
 const R = Math.random;
 const side = () => (R() < 0.5 ? -1 : 1);
-const lambert = (color, emissive = 0x000000, emissiveIntensity = 1, extra = {}) => new MeshLambertMaterial({ color, emissive, emissiveIntensity, ...extra });
+// Scenery gets a softer neon rim (silhouettes against the sky).
+const lambert = (color, emissive = 0x000000, emissiveIntensity = 1, extra = {}) => withRim(new MeshLambertMaterial({ color, emissive, emissiveIntensity, ...extra }), 0.55);
 
 /**
  * Fills a part's scratch transform (reused every frame: no allocations).

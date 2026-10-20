@@ -1,7 +1,6 @@
 import {
   AdditiveBlending,
   BoxGeometry,
-  CanvasTexture,
   Color,
   DirectionalLight,
   Fog,
@@ -18,13 +17,14 @@ import {
   SpotLight,
   Sprite,
   SpriteMaterial,
-  SRGBColorSpace,
   WireframeGeometry,
 } from 'three';
 import { LANES } from '../config/game3d.config.js';
 import { zoneTheme } from '../config/zones.js';
 import { buildScenery } from './Scenery.js';
-import { dotTexture, drawSky, gridTexture, planetTexture, roadTexture, sunTexture } from './textures3d.js';
+import { RIM, ROAD, withRoadReflection } from './shading.js';
+import { Sky } from './Sky.js';
+import { dotTexture, gridTexture, planetTexture, roadTexture, sunTexture } from './textures3d.js';
 import { SpeedLines, Weather, WEATHER_TYPES } from './Weather.js';
 
 const ROAD_LEN = 320;
@@ -62,13 +62,9 @@ export class Environment {
     this.boost = 0; // 0..1, set by the game view (turbo)
     this.flashK = 0; // lightning
 
-    // Sky gradient (with stars) as screen-space background.
-    this.skyCanvas = document.createElement('canvas');
-    this.skyCanvas.width = 256;
-    this.skyCanvas.height = 512;
-    this.skyTex = new CanvasTexture(this.skyCanvas);
-    this.skyTex.colorSpace = SRGBColorSpace;
-    scene.background = this.skyTex;
+    // Animated sky dome (gradient, stars, nebula, aurora, shooting stars).
+    this.sky = new Sky(scene, quality.post ? 1 : 0);
+    scene.background = null;
     scene.fog = new Fog(0x000000, 30, 125);
 
     this.hemi = new HemisphereLight(0xb9a6ff, 0x1a0838, 1.6);
@@ -84,7 +80,7 @@ export class Environment {
     this.black = new Color(0x030008);
 
     // Road and side ground.
-    this.roadMat = new MeshLambertMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.35 });
+    this.roadMat = withRoadReflection(new MeshLambertMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.35 }));
     this.road = new Mesh(new PlaneGeometry(ROAD_HALF * 2, ROAD_LEN), this.roadMat);
     this.road.rotation.x = -Math.PI / 2;
     this.road.position.z = ROAD_CENTER;
@@ -230,6 +226,7 @@ export class Environment {
     this.towerCount = q.buildings ?? 44;
     for (const [id, layers] of Object.entries(this.sceneries)) this._applyDetail(id, layers);
     this.weather.setCount(q.weather ?? 260);
+    this.sky?.setDetail(q.post ? 1 : 0);
   }
 
   _applyDetail(id, layers) {
@@ -256,8 +253,10 @@ export class Environment {
       this.scene.fog.color.copy(this.fogTo);
     }
 
-    drawSky(this.skyCanvas, theme.sky, { stars: theme.id === 'orbit' ? 1.6 : theme.id === 'abyss' ? 0.15 : 0.6 });
-    this.skyTex.needsUpdate = true;
+    this.sky.setLook(theme.sky, theme.id);
+    // Neon rims in the zone's line color; the sun's color on the wet road.
+    RIM.color.value.setHex(theme.line).lerp(this.white, 0.15);
+    ROAD.sun.value.set(theme.sun[1]);
 
     const road = roadTexture(theme.road, theme.line);
     road.repeat.set(1, ROAD_LEN / TILE);
@@ -306,7 +305,7 @@ export class Environment {
     this._applyHaze();
     this.headlight.intensity = k * 45;
     this.roadMat.emissiveIntensity = 0.35 * (1 - 0.45 * k);
-    this.scene.backgroundIntensity = 1 - 0.85 * k;
+
     this.sideMat.color.setScalar(1 - 0.55 * k);
   }
 
@@ -346,6 +345,10 @@ export class Environment {
       flash = this.flashK * (this.flashK > 0.55 && this.flashK < 0.7 ? 0.3 : 1);
       fog.lerp(this.white, flash * 0.55);
     }
+    this.sky.update(dt, camera, { dim: Math.min(0.85, dark * 0.85 + storm * 0.35), flash });
+    ROAD.time.value += dt;
+    // The reflection fades with the sun (storm, blackout).
+    ROAD.amount.value = 1.1 * (1 - Math.max(storm * 0.7, dark * 0.9));
     this.hemi.intensity = (1.6 + flash * 3) * (1 - 0.72 * dark);
     this.sunLight.intensity = (1.2 + flash * 2) * (1 - 0.85 * dark);
     // Fog closes in during a storm or a blackout.

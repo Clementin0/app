@@ -23,6 +23,7 @@ import {
   TorusGeometry,
 } from 'three';
 import { GAME3D } from '../config/game3d.config.js';
+import { withRim } from './shading.js';
 import { chevronTexture, crateTexture, dotTexture, hazardTexture, panelTexture, powerupIconTexture } from './textures3d.js';
 
 export const TURBO_COLOR = 0x00f5ff;
@@ -46,8 +47,9 @@ const M = (key, make) => {
   return mat.get(key);
 };
 
-export const lambert = (color, emissive = 0x000000, emissiveIntensity = 1) =>
-  M(`l_${color}_${emissive}_${emissiveIntensity}`, () => new MeshLambertMaterial({ color, emissive, emissiveIntensity }));
+// Every model material gets the neon rim light (see shading.js).
+export const lambert = (color, emissive = 0x000000, emissiveIntensity = 1, rim = 1) =>
+  M(`l_${color}_${emissive}_${emissiveIntensity}_${rim}`, () => withRim(new MeshLambertMaterial({ color, emissive, emissiveIntensity }), rim));
 export const basic = (color, opts = {}) => M(`b_${color}_${JSON.stringify(opts)}`, () => new MeshBasicMaterial({ color, ...opts }));
 export const glowMat = (color) => M(`g_${color}`, () => new SpriteMaterial({ map: dotTexture(), color, blending: AdditiveBlending, transparent: true, depthWrite: false }));
 
@@ -333,7 +335,8 @@ function boss(kindId = 'mothership') {
   const s = GAME3D.BOSS;
   const kind = GAME3D.BOSS_KINDS.find((k) => k.id === kindId) ?? GAME3D.BOSS_KINDS[0];
   const g = new Group();
-  const hullMat = lambert(kind.hull, 0x120a24);
+  // A big hull: a softer rim, or it glows into a white disc.
+  const hullMat = lambert(kind.hull, 0x120a24, 1, 0.3);
   const hull = new Mesh(G('bossHull', () => new SphereGeometry(s.w / 2, 32, 16)), hullMat);
   hull.scale.set(1, kind.id === 'carrier' ? 0.24 : 0.32, 0.7);
   hull.position.y = s.h * 0.45;

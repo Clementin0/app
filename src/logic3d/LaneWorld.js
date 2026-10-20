@@ -717,6 +717,9 @@ export class LaneWorld {
       this._emit('shotBlocked', { x, y, z, boss: true });
       return;
     }
+    // Thresholds already behind (health set lower elsewhere) are dropped:
+    // a shield never heals the boss back up.
+    while (b.shieldAt.length && b.hp <= b.shieldAt[0] * b.maxHp) b.shieldAt.shift();
     const next = b.shieldAt[0];
     if (next !== undefined && b.hp - damage <= next * b.maxHp) {
       b.shieldAt.shift();

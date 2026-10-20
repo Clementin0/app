@@ -3,6 +3,7 @@ import { DEFAULT_EQUIPPED, getItem } from '../config/cosmetics.js';
 import { laneX } from '../config/game3d.config.js';
 import { animateCharacter, buildCharacter } from './Character.js';
 import { buildEntity, enemyShot, flash, heavyShot, laserWave, playerShot, poolKey, quakeWave, RAMP_COLOR, rocketShot, TURBO_COLOR } from './models.js';
+import { BlobShadows, Debris, Flashes, Ribbon } from './Effects.js';
 import { Particles } from './Particles.js';
 import { chevronTexture, dotTexture } from './textures3d.js';
 
@@ -16,6 +17,8 @@ const EXPLOSION = [0xff8a3d, 0xffd23f, 0xff3860, 0xffffff];
 const BASE_FOV = 62;
 const RINGS = 10; // shockwave rings alive at once
 const ROCKET_SMOKE = [0xff8a3d, 0xffd23f, 0x9a9ab0];
+// Holes, pads, markers and fences cast no shadow.
+const NO_SHADOW = new Set(['gap', 'turbo', 'ramp', 'meteor', 'fence', 'platform']);
 
 /**
  * Renders a LaneWorld in the shared Three.js stage: entity meshes (pooled
@@ -73,6 +76,10 @@ export class GameView {
     this.eshotMeshes = new Map();
     this.flashes = new Map();
     this.particles = new Particles(stage.scene, stage.quality.particles);
+    this.shadows = new BlobShadows(this.root, 64);
+    this.ribbon = new Ribbon(this.root, this.trailColors[0]);
+    this.debris = new Debris(this.root, stage.quality.particles > 300 ? 120 : 48);
+    this.bursts = new Flashes(this.root, 8); // explosion flashes (this.flashes = hit flashes)
     this.trailTimer = 0;
     this.muzzleTimer = 0;
 
@@ -121,6 +128,8 @@ export class GameView {
   reset() {
     this.character.visible = true;
     this.particles.clear();
+    this.debris.clear();
+    this.ribbon.setVisible(true);
     this.theme = this.stage.environment.setTheme(this.world.zone.index, true);
     this.stormOn = false;
     this.stormK = 0;
@@ -201,6 +210,10 @@ export class GameView {
         }
         case 'kill':
           ps.burst(X(e.x), e.y, e.z, EXPLOSION, e.enemy === 'crate' ? 22 : 34, 7, 0.8);
+          if (this.effects) {
+            this.debris.burst(X(e.x), e.y, e.z, e.enemy === 'crate' ? [0xc98a3d, 0xffd23f, 0x6a4a2a] : [0xff8a3d, 0x3a3550, 0xffd23f, 0xff3860], e.enemy === 'crate' ? 8 : 10);
+            this.bursts.spawn(X(e.x), e.y, e.z, 0xffe0b0, e.enemy === 'crate' ? 3 : 4.5);
+          }
           this.ring(X(e.x), 0.15, e.z, 0xff8a3d, e.enemy === 'crate' ? 2.6 : 3.6);
           this.addShake(0.12);
           break;
@@ -209,6 +222,7 @@ export class GameView {
           if (e.turbo) {
             this.ring(X(e.x), 0.2, e.z, TURBO_COLOR, 3.2, 0.3);
             this.addShake(0.18);
+            if (this.effects) this.debris.burst(X(e.x), e.y, e.z, [TURBO_COLOR, 0x2a2244, 0xffffff], 12, 9);
           }
           break;
         case 'turbo':
@@ -266,6 +280,10 @@ export class GameView {
           for (let i = 0; i < 4; i++) ps.burst(X(e.x) + (Math.random() - 0.5) * 4, e.y + Math.random(), e.z, EXPLOSION, 40, 10, 1.2);
           this.ring(X(e.x), 0.2, e.z, 0xffd23f, 12, 0.8);
           this.ring(X(e.x), 1.5, e.z, 0xff2bd6, 8, 0.6);
+          if (this.effects) {
+            this.bursts.spawn(X(e.x), e.y, e.z, 0xffffff, 16);
+            this.debris.burst(X(e.x), e.y, e.z, EXPLOSION, 40, 12);
+          }
           this.addShake(1);
           break;
         case 'zone':
@@ -331,6 +349,10 @@ export class GameView {
         case 'meteorImpact':
           ps.burst(X(e.x), 0.4, e.z, [0xff8a3d, 0xffd23f, 0xff3860, 0xffffff], 40, 9, 0.8, { up: 4 });
           this.ring(X(e.x), 0.12, e.z, 0xff6a00, 5, 0.5);
+          if (this.effects) {
+            this.bursts.spawn(X(e.x), 0.8, e.z, 0xffc080, 6);
+            this.debris.burst(X(e.x), 0.5, e.z, [0x3a1a0a, 0xff6a00, 0xffd23f], 10, 8);
+          }
           this.addShake(e.hit ? 0.6 : 0.25);
           break;
         case 'bomberDrop':
@@ -341,6 +363,7 @@ export class GameView {
           break;
         case 'explosion':
           ps.burst(X(e.x), e.y, e.z, [0xff6a00, 0xffd23f, 0xffffff], 36, 9, 0.6);
+          if (this.effects) this.bursts.spawn(X(e.x), e.y, e.z, e.rocket ? 0xe6ffb0 : 0xffd0a0, 4);
           this.ring(X(e.x), Math.max(0.15, e.y - 0.6), e.z, e.rocket ? 0xb6ff3d : 0xff6a00, (e.radius ?? 2) * 1.6, 0.35);
           this.addShake(e.rocket ? 0.12 : 0.2);
           break;
@@ -467,7 +490,7 @@ export class GameView {
     if (w.state === 'running' && !this.frozen && this.stage.quality.trail) {
       this.trailTimer -= dt;
       if (this.trailTimer <= 0) {
-        this.trailTimer = 0.025;
+        this.trailTimer = 0.045;
         this.particles.burst(X(p.x) + (Math.random() - 0.5) * 0.4, p.y + 0.5 + Math.random() * 0.5, -0.5, this.trailColors, 1, 0.6, 0.45);
       }
     }
@@ -513,6 +536,14 @@ export class GameView {
 
     this.particles.update(dt, speed);
     this._updateRings(dt, speed);
+    const scroll = speed * dt;
+    this.debris.update(dt, scroll);
+    this.bursts.update(dt, scroll);
+    // Light ribbon behind the runner (medium and high quality).
+    const ribbonOn = !!this.stage.quality.trail && w.state !== 'dead' && p.jetpack <= 0;
+    if (this.ribbon.mesh.visible !== ribbonOn) this.ribbon.setVisible(ribbonOn);
+    if (ribbonOn && !this.frozen) this.ribbon.update(X(p.x), p.y, scroll);
+    this._updateShadows();
 
     for (const [obj, t] of this.flashes) {
       const left = t - dt;
@@ -523,6 +554,21 @@ export class GameView {
     }
 
     this._updateCamera(dt);
+  }
+
+  /** Blob shadows: the runner, the entities on (or just above) the road, the boss. */
+  _updateShadows() {
+    const w = this.world;
+    const sh = this.shadows;
+    sh.begin();
+    const p = w.player;
+    if (w.state !== 'dead' && this.character.visible) sh.add(X(p.x), 0, 1.0, 0.9, p.y);
+    for (const e of w.entities) {
+      if (e.dead || e.z > 70 || e.z < -6 || NO_SHADOW.has(e.type)) continue;
+      sh.add(X(e.x), e.z, e.w, Math.min(e.d, 3), e.y);
+    }
+    if (w.boss) sh.add(X(w.boss.x), w.boss.z, 7, 4, 1);
+    sh.end();
   }
 
   _syncEntities(dt) {
@@ -577,6 +623,10 @@ export class GameView {
         cube.rotation.set(this.time * 1.3, this.time * 1.7, 0);
       }
       for (let i = 0; i < lights.length; i++) lights[i].visible = Math.floor(this.time * 6 + i) % 2 === 0;
+      // Badly damaged: sparks and smoke pour out of it.
+      if (this.effects && b.hp < b.maxHp * 0.5 && !this.frozen && Math.random() < dt * 14) {
+        this.particles.burst(X(b.x) + (Math.random() - 0.5) * 4, b.y + 1 + Math.random(), b.z - 1, [0xffd23f, 0xff6a00, 0x5a5070], 3, 3, 0.6, { up: 2 });
+      }
       // Shield bubble and rage aura around it.
       const by = this.bossMesh.position.y + b.h * 0.7;
       this.bossShield.visible = b.shield > 0;
@@ -803,6 +853,10 @@ export class GameView {
   }
 
   dispose() {
+    this.shadows.dispose();
+    this.ribbon.dispose();
+    this.debris.dispose();
+    this.bursts.dispose();
     // The camera and environment are shared with the other views.
     const cam = this.stage.camera;
     if (cam.fov !== BASE_FOV) {

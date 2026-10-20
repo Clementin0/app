@@ -493,3 +493,14 @@ describe('v5 time attack', () => {
     expect(save.data.timeAttackBest).toEqual({ score: 500, meters: 300 });
   });
 });
+
+describe('v5 review: boss shields', () => {
+  it('a shield never heals a boss whose health is already below its threshold', () => {
+    const w = bossWorld();
+    const b = w.boss;
+    b.hp = 1;
+    w._damageBoss(b, 5, 0, 1, b.z);
+    expect(b.shield).toBe(0);
+    expect(w.boss).toBeNull(); // defeated
+  });
+});

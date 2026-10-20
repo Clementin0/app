@@ -120,7 +120,8 @@ export function buildCharacter(equipped = DEFAULT_EQUIPPED) {
   const bodyPivot = new Group(); // squash & stretch around the feet
   root.add(bodyPivot);
 
-  const bodyMat = lambert(skin.body, skin.glow, 0.18);
+  // Close to the camera: a softer rim than the other models.
+  const bodyMat = lambert(skin.body, skin.glow, 0.18, 0.5);
   const body = new Mesh(once('body', () => new RoundedBoxGeometry(0.95, 0.95, 0.9, 4, 0.2)), bodyMat);
   body.position.y = 0.88;
   const belly = new Mesh(once('belly', () => new BoxGeometry(0.6, 0.3, 0.05)), lambert(skin.accent, skin.accent, 0.25));
