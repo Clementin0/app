@@ -70,7 +70,7 @@ export class PauseScene extends Phaser.Scene {
     game.finalizeRun?.();
     const mode = game.mode ?? 'endless';
     this.scene.stop('Game');
-    this.scene.start(target, target === 'Game' ? { mode } : undefined);
+    this.scene.start(target, target === 'Game' ? { mode, level: game.levelId } : undefined);
   }
 
   handleBack() {

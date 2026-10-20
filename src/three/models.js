@@ -693,7 +693,7 @@ function gem() {
   return g;
 }
 
-const POWERUP_COLORS = { shield: 0x39ff88, magnet: 0xff3860, rapid: 0xff8a3d, heart: 0xff5ad9, double: 0xffd23f, jetpack: 0x7ff3ff, rockets: 0xb6ff3d };
+const POWERUP_COLORS = { shield: 0x39ff88, magnet: 0xff3860, rapid: 0xff8a3d, heart: 0xff5ad9, double: 0xffd23f, jetpack: 0x7ff3ff, rockets: 0xb6ff3d, clock: 0x7dffb0 };
 
 function powerup(type) {
   const g = new Group();

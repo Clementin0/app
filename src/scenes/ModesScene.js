@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { CAMPAIGN } from '../config/campaign.js';
 import { fmt, t } from '../i18n.js';
 import { CHALLENGE_REWARD, dailyChallenge } from '../services/DailyChallenge.js';
 import { services } from '../services/services.js';
@@ -6,12 +7,14 @@ import { Button } from '../ui/Button.js';
 import { bannerReserve, bindLayout } from '../ui/layout.js';
 import { COLORS, glow, hex, textStyle } from '../ui/theme.js';
 
-const PANEL_W = 920;
-const PANEL_H = 545;
-const CARD_W = 420;
-const CARD_H = 365;
+const PANEL_W = 940;
+const PANEL_H = 590;
+const CARD_W = 440;
+const CARD_H = 200;
+const ROWS = [92, 306];
+const COLS = [-CARD_W / 2 - 12, CARD_W / 2 + 12];
 
-/** Extra modes from the menu: today's challenge and the boss rush. */
+/** The modes beyond the classic run: campaign, daily challenge, boss rush, time attack. */
 export class ModesScene extends Phaser.Scene {
   constructor() {
     super('Modes');
@@ -32,59 +35,89 @@ export class ModesScene extends Phaser.Scene {
     const bg = this.add.graphics();
     bg.fillStyle(COLORS.panel, 0.97).fillRoundedRect(-PANEL_W / 2, 0, PANEL_W, PANEL_H, 36);
     bg.lineStyle(3, COLORS.purple, 0.9).strokeRoundedRect(-PANEL_W / 2, 0, PANEL_W, PANEL_H, 36);
-    const title = glow(this.add.text(0, 50, t('modes'), textStyle(48)).setOrigin(0.5), COLORS.purple, 18);
+    const title = glow(this.add.text(0, 46, t('modes'), textStyle(44)).setOrigin(0.5), COLORS.purple, 18);
     this.panel.add([bg, title]);
 
-    // Daily challenge card.
-    const daily = this._card(-CARD_W / 2 - 15, COLORS.yellow, t('modeDaily'), [
-      [t('challengeToday'), '#c9b8ff', 18],
-      [t(`mod_${challenge.modifier.id}`), '#ffffff', 22],
-      [t('modeBest', { n: fmt(status.best) }), '#ffd23f', 20],
-      [status.done ? t('challengeDone') : t('challengeReward', CHALLENGE_REWARD), status.done ? '#7dffb0' : '#9ff6ff', 17],
-    ]);
-    this.dailyButton = new Button(this, -CARD_W / 2 - 15, this._buttonY(daily), { label: t('play'), icon: 'icon_play', width: 260, height: 76, fontSize: 32, color: COLORS.green, onClick: () => this.play('daily') });
+    const stars = save.totalStars;
+    const cards = [
+      {
+        key: 'campaign',
+        color: COLORS.cyan,
+        title: t('modeCampaign'),
+        lines: [t('modeCampaignDesc', { n: CAMPAIGN.length }), `★ ${stars} / ${CAMPAIGN.length * 3}`],
+        label: t('modeOpen'),
+        icon: 'icon_map',
+        onClick: () => this.openCampaign(),
+      },
+      {
+        key: 'daily',
+        color: COLORS.yellow,
+        title: t('modeDaily'),
+        lines: [`${t('challengeToday')} ${t(`mod_${challenge.modifier.id}`)}`, status.done ? t('challengeDone') : t('challengeReward', CHALLENGE_REWARD), t('modeBest', { n: fmt(status.best) })],
+        onClick: () => this.play('daily'),
+      },
+      {
+        key: 'bossRush',
+        color: COLORS.pink,
+        title: t('modeBossRush'),
+        lines: [t('modeBossRushDesc'), t('modeBestBosses', { n: s.bossRushBest.bosses })],
+        onClick: () => this.play('bossRush'),
+      },
+      {
+        key: 'timeAttack',
+        color: COLORS.green,
+        title: t('modeTimeAttack'),
+        lines: [t('modeTimeAttackDesc'), t('modeBest', { n: fmt(s.timeAttackBest.score) })],
+        icon: 'icon_clock',
+        onClick: () => this.play('timeAttack'),
+      },
+    ];
+    cards.forEach((c, i) => {
+      const x = COLS[i % 2];
+      const y = ROWS[Math.floor(i / 2)];
+      const items = this._card(x, y, c);
+      const button = new Button(this, x + CARD_W / 2 - 112, y + CARD_H - 44, { label: c.label ?? t('play'), icon: c.icon ?? 'icon_play', width: 196, height: 60, fontSize: 24, color: c.color, onClick: c.onClick });
+      this[`${c.key}Button`] = button;
+      this.panel.add([...items, button]);
+    });
 
-    // Boss rush card.
-    const rush = this._card(CARD_W / 2 + 15, COLORS.pink, t('modeBossRush'), [
-      [t('modeBossRushDesc'), '#ffffff', 21],
-      [t('modeBestBosses', { n: s.bossRushBest.bosses }), '#ffd23f', 20],
-      [s.bossRushBest.score ? t('modeBest', { n: fmt(s.bossRushBest.score) }) : '', '#c9b8ff', 17],
-    ]);
-    this.bossRushButton = new Button(this, CARD_W / 2 + 15, this._buttonY(rush), { label: t('play'), icon: 'icon_play', width: 260, height: 76, fontSize: 32, color: COLORS.pink, onClick: () => this.play('bossRush') });
-
-    this.closeButton = new Button(this, 0, PANEL_H - 22, { label: t('close'), width: 220, height: 60, fontSize: 26, color: COLORS.panelEdge, onClick: () => this.close() });
-    this.panel.add([...daily.items, ...rush.items, this.dailyButton, this.bossRushButton, this.closeButton]);
+    this.closeButton = new Button(this, 0, PANEL_H - 40, { label: t('close'), width: 220, height: 56, fontSize: 24, color: COLORS.panelEdge, onClick: () => this.close() });
+    this.panel.add(this.closeButton);
 
     bindLayout(this, (w, h) => {
       this.dim.setSize(w, h);
       const avail = h - bannerReserve(this);
-      const sc = Math.min(1, (avail - 40) / PANEL_H, (w - 32) / PANEL_W);
-      this.panel.setScale(sc).setPosition(w / 2, Math.max(8, (avail - (PANEL_H + 30) * sc) / 2));
+      const sc = Math.min(1, (avail - 24) / PANEL_H, (w - 32) / PANEL_W);
+      this.panel.setScale(sc).setPosition(w / 2, Math.max(8, (avail - PANEL_H * sc) / 2));
     });
     this.panel.setAlpha(0);
     this.tweens.add({ targets: this.panel, alpha: 1, duration: 180 });
   }
 
-  /** Card frame with a title and lines of text (centered). */
-  _card(x, color, title, lines) {
+  /** Card frame: title on top, short lines under it (the button sits bottom right). */
+  _card(x, y, { color, title, lines }) {
     const g = this.add.graphics();
-    g.fillStyle(COLORS.ink, 0.75).fillRoundedRect(x - CARD_W / 2, 95, CARD_W, CARD_H, 26);
-    g.lineStyle(3, color, 0.9).strokeRoundedRect(x - CARD_W / 2, 95, CARD_W, CARD_H, 26);
-    const head = glow(this.add.text(x, 132, title, textStyle(32, hex(color))).setOrigin(0.5), color, 12);
+    g.fillStyle(COLORS.ink, 0.75).fillRoundedRect(x - CARD_W / 2, y, CARD_W, CARD_H, 24);
+    g.lineStyle(3, color, 0.9).strokeRoundedRect(x - CARD_W / 2, y, CARD_W, CARD_H, 24);
+    const left = x - CARD_W / 2 + 24;
+    const head = glow(this.add.text(left, y + 18, title, textStyle(30, hex(color))), color, 10);
     const items = [g, head];
-    let y = 176;
-    for (const [text, c, size] of lines) {
+    let ly = y + 62;
+    for (const text of lines) {
       if (!text) continue;
-      const line = this.add.text(x, y, text, textStyle(size, c, { align: 'center', wordWrap: { width: CARD_W - 40 } })).setOrigin(0.5, 0);
+      const line = this.add.text(left, ly, text, textStyle(17, '#e9ddff', { wordWrap: { width: CARD_W - 48 } }));
       items.push(line);
-      y += line.height + 8;
+      ly += line.height + 4;
     }
-    return { items, bottom: y };
+    return items;
   }
 
-  /** Play button under the card's text, inside the card. */
-  _buttonY(card) {
-    return Math.min(95 + CARD_H - 44, Math.max(410, card.bottom + 40));
+  openCampaign() {
+    if (this.closing) return;
+    this.closing = true;
+    services.sfx.unlock();
+    this.scene.stop();
+    this.scene.launch('Campaign');
   }
 
   play(mode) {

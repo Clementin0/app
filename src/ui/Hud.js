@@ -79,6 +79,10 @@ export class Hud {
     // Event in progress: name and time left under the wallet.
     this.eventLabel = scene.add.text(0, 0, '', textStyle(18, '#ffd23f', { strokeThickness: 4 })).setOrigin(0.5).setDepth(DEPTH + 1).setVisible(false);
     this.eventBar = scene.add.graphics().setDepth(DEPTH);
+    // Time attack clock (right of the wallet) and campaign goal (under it).
+    this.timerText = glow(scene.add.text(0, 0, '', textStyle(44, '#7dffb0')).setOrigin(0, 0.5).setDepth(DEPTH + 1), COLORS.green, 10).setVisible(false);
+    this.goalLabel = scene.add.text(0, 0, '', textStyle(18, '#7ffcff', { strokeThickness: 4 })).setOrigin(0.5).setDepth(DEPTH + 1).setVisible(false);
+    this.lastGoal = '';
     // Active perks: small badges with their level, bottom-left.
     this.perkIcons = PERKS.map((p) => ({
       id: p.id,
@@ -136,6 +140,8 @@ export class Hud {
     this.vignette.setDisplaySize(width, height);
     this.modeLabel.setPosition(m + 4, m + 134);
     this.eventLabel.setPosition(width / 2, m + 84);
+    this.goalLabel.setPosition(width / 2, m + 84);
+    this.timerText.setPosition(width / 2 + 166, m + 30);
     this.lastPerks = ''; // re-place the perk badges
     this.bossRect = { x: width / 2 - 260, y: m + 104, w: 520 };
     this.bossLabel.setPosition(width / 2, m + 96);
@@ -186,7 +192,26 @@ export class Hud {
     this.zoneBar.clear();
     this.zoneBar.fillStyle(COLORS.ink, 0.7).fillRoundedRect(z.x, z.y, z.w, 8, 4);
     const ev = state.event;
-    if (ev) {
+    // Time attack: the clock; red in the last ten seconds.
+    if (state.timeLeft !== null && state.timeLeft !== undefined) {
+      const sec = Math.ceil(state.timeLeft);
+      this.timerText.setText(`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`).setVisible(true);
+      this.timerText.setColor(sec <= 10 ? '#ff5a7a' : '#7dffb0');
+      if (sec <= 10) this.timerText.setScale(1 + 0.08 * Math.max(0, Math.sin(this.scene.time.now / 80)));
+      else this.timerText.setScale(1);
+    } else this.timerText.setVisible(false);
+    // Campaign: the goal, unless an event is running.
+    const goal = state.goal;
+    this.goalLabel.setVisible(!!goal && !ev && !state.boss);
+    if (goal) {
+      const text = `${t('goalLabel')} ${goal.progress} / ${goal.value} ${t(`goalUnit_${goal.type}`)}`;
+      if (text !== this.lastGoal) this.goalLabel.setText((this.lastGoal = text));
+    }
+    if (goal && !ev) {
+      this.zoneBar.fillStyle(COLORS.cyan, 1).fillRoundedRect(z.x, z.y, Math.max(8, z.w * (goal.progress / goal.value)), 8, 4);
+      this.eventType = null;
+      this.eventLabel.setVisible(false);
+    } else if (ev) {
       const color = EVENT_COLORS[ev.type] ?? COLORS.yellow;
       this.zoneBar.fillStyle(color, 1).fillRoundedRect(z.x, z.y, Math.max(8, z.w * (ev.left / ev.duration)), 8, 4);
       if (this.eventType !== ev.type) {
@@ -354,6 +379,12 @@ export class Hud {
     else if (step.gesture === 'down') tweens.add({ targets: this.promptArrow, y: 122, duration: 520, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     else if (step.gesture === 'horizontal') tweens.add({ targets: this.promptArrow, scaleX: 1.25, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     else tweens.add({ targets: this.promptRing, scale: 1.35, duration: 450, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+  }
+
+  /** Time attack: "+4s" flies up from the clock. */
+  timeBonus(seconds) {
+    if (!this.width) return;
+    this.popup((this.width / 2 + 210) / this.width, (this.margin + 70) / this.height, `+${Math.round(seconds * 10) / 10}s`, '#7dffb0', 28);
   }
 
   setModeLabel(text, color = COLORS.yellow) {

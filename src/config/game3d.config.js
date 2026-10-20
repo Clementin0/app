@@ -190,8 +190,11 @@ export const OVERDRIVE = Object.freeze({
   gain: { coin: 0.012, kill: 0.05, nearMiss: 0.08, smash: 0.03, boss: 0.3 },
 });
 
+/** Time attack: beat the clock. Clocks on the road, kills and near misses add time. */
+export const TIME_ATTACK = Object.freeze({ start: 60, clock: 4, kill: 0.5, nearMiss: 0.5, boss: 10, clockEvery: 5, rampTime: 55, reviveTime: 15 });
+
 /** Near miss: an obstacle passes in the lane you left a moment ago. */
-export const NEAR_MISS = Object.freeze({ window: 0.45, points: 25 });
+export const NEAR_MISS = Object.freeze({ window: 0.6, points: 25 });
 
 /** Falling meteor: a marker on the road, then an impact on that lane. */
 export const METEOR = Object.freeze({ w: 2.0, h: 3, d: 3.4, fallHeight: 22 });
@@ -227,4 +230,4 @@ export const POWERUPS = Object.freeze({
   spawnEvery: [14, 24],
 });
 
-export const GAME3D = Object.freeze({ LANES, PLAYER, SPEED, WORLD, WEAPONS_STATS, BULLETS, ENEMIES, OBSTACLES, BOSS, BOSS_RUSH, BOSS_KINDS, SHIELD_PATTERNS, BOSS_COMBOS, ZONES, EVENTS, METEOR, JETPACK, TURBO, RAMP, ROCKETS, OVERDRIVE, NEAR_MISS, SCORE, POWERUPS });
+export const GAME3D = Object.freeze({ LANES, PLAYER, SPEED, WORLD, WEAPONS_STATS, BULLETS, ENEMIES, OBSTACLES, BOSS, BOSS_RUSH, BOSS_KINDS, SHIELD_PATTERNS, BOSS_COMBOS, ZONES, EVENTS, METEOR, JETPACK, TURBO, RAMP, ROCKETS, OVERDRIVE, NEAR_MISS, TIME_ATTACK, SCORE, POWERUPS });

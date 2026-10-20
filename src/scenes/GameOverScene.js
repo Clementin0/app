@@ -38,6 +38,8 @@ export class GameOverScene extends Phaser.Scene {
       levelXp: 0,
       levelsUp: [],
       challengeReward: null,
+      campaign: null,
+      timeUp: false,
       ...data,
     };
     this.busy = false;
@@ -66,12 +68,29 @@ export class GameOverScene extends Phaser.Scene {
     bg.fillStyle(COLORS.panel, 0.96).fillRoundedRect(-PANEL_W / 2, 0, PANEL_W, panelH, 36);
     bg.lineStyle(3, r.isNewBest ? COLORS.green : COLORS.pink, 1).strokeRoundedRect(-PANEL_W / 2, 0, PANEL_W, panelH, 36);
 
-    const titleColor = r.isNewBest ? COLORS.green : COLORS.pink;
-    const title = glow(this.add.text(0, 58, r.isNewBest ? t('newRecord') : t('gameOver'), textStyle(64)).setOrigin(0.5), titleColor, 24);
+    const camp = r.campaign;
+    const won = !!camp?.won;
+    const titleColor = r.isNewBest || won ? COLORS.green : COLORS.pink;
+    const titleText = camp ? (won ? t('levelComplete') : t('levelFailed')) : r.isNewBest ? t('newRecord') : r.timeUp ? t('timeUp') : t('gameOver');
+    const title = glow(this.add.text(0, 58, titleText, textStyle(64)).setOrigin(0.5), titleColor, 24);
 
     this.scoreText = glow(this.add.text(0, 150, '0', textStyle(84, '#ffffff')).setOrigin(0.5), COLORS.cyan, 16);
-    const best = this.add.text(-PANEL_W / 2 + 60, 222, `${t('record')}  ${fmt(r.best)}`, textStyle(28, '#ffd23f')).setOrigin(0, 0.5);
-    const dist = this.add.text(PANEL_W / 2 - 60, 222, `${fmt(r.meters)} m`, textStyle(28, '#c9b8ff')).setOrigin(1, 0.5);
+    const best = this.add.text(-PANEL_W / 2 + 60, 222, camp ? '' : `${t('record')}  ${fmt(r.best)}`, textStyle(28, '#ffd23f')).setOrigin(0, 0.5);
+    const dist = this.add.text(PANEL_W / 2 - 60, 222, camp ? '' : `${fmt(r.meters)} m`, textStyle(28, '#c9b8ff')).setOrigin(1, 0.5);
+    // Campaign: the level's stars (new ones pop in), or how far the goal got.
+    const campItems = [];
+    if (camp) {
+      if (won) {
+        const stars = camp.result?.stars ?? [true, false, false];
+        stars.forEach((on, i) => {
+          const star = this.add.image(-70 + i * 70, 222, 'icon_star').setScale(0.9).setTint(on ? COLORS.yellow : 0x3a2c66);
+          campItems.push(star);
+          if (camp.result?.newStars?.[i]) this.tweens.add({ targets: star, scale: { from: 0.2, to: 0.9 }, delay: 300 + i * 220, duration: 380, ease: 'Back.easeOut' });
+        });
+      } else {
+        campItems.push(this.add.text(0, 222, `${camp.goal}: ${Math.min(camp.progress, camp.target)} / ${camp.target}`, textStyle(26, '#c9b8ff')).setOrigin(0.5));
+      }
+    }
 
     const coinIcon = this.add.image(-270, 278, 'coin').setScale(0.8);
     const coinText = this.add.text(-246, 278, `+${r.coins}`, textStyle(30, '#ffd23f')).setOrigin(0, 0.5);
@@ -79,7 +98,7 @@ export class GameOverScene extends Phaser.Scene {
     const gemText = this.add.text(-86, 278, `+${r.gems}`, textStyle(30, '#7ff3ff')).setOrigin(0, 0.5);
     const killIcon = this.add.image(40, 278, 'icon_target').setScale(0.55).setTint(COLORS.red);
     const killText = this.add.text(66, 278, String(r.kills ?? 0), textStyle(30, '#ff9ab0')).setOrigin(0, 0.5);
-    const zoneLabel = r.mode === 'bossRush' ? t('bossesBeaten', { n: r.bosses }) : `${t('zoneReached')} ${r.zone ?? 1}`;
+    const zoneLabel = r.mode === 'bossRush' ? t('bossesBeaten', { n: r.bosses }) : camp ? t('levelTitle', { n: camp.level }) : `${t('zoneReached')} ${r.zone ?? 1}`;
     const zoneText = this.add.text(PANEL_W / 2 - 60, 278, zoneLabel, textStyle(30, '#c9b8ff')).setOrigin(1, 0.5);
 
     // XP of the run and the level bar.
@@ -92,7 +111,7 @@ export class GameOverScene extends Phaser.Scene {
     xpBar.fillStyle(COLORS.cyan, 1).fillRoundedRect(bx, xpY - 8, Math.max(12, (bw * r.levelXp) / xpToNext(r.level)), 16, 8);
     const xpText = this.add.text(PANEL_W / 2 - 60, xpY, t('xpGain', { n: fmt(r.xp) }), textStyle(26, '#7ffcff')).setOrigin(1, 0.5);
 
-    this.panel.add([bg, title, this.scoreText, best, dist, coinIcon, coinText, gemIcon, gemText, killIcon, killText, zoneText, lvText, xpBar, xpText]);
+    this.panel.add([bg, title, this.scoreText, best, dist, ...campItems, coinIcon, coinText, gemIcon, gemText, killIcon, killText, zoneText, lvText, xpBar, xpText]);
 
     const rowY = (canContinue ? 476 : 370) + XP_ROW;
     if (canContinue) {
@@ -113,9 +132,23 @@ export class GameOverScene extends Phaser.Scene {
       this.time.addEvent({ delay: 500, loop: true, callback: () => this._refreshContinue() });
     }
 
-    this.retryButton = new Button(this, -150, rowY, { label: t('retry'), icon: 'icon_retry', width: 280, height: 92, fontSize: 36, color: COLORS.pink, onClick: () => this.finish('Game') });
-    this.menuButton = new Button(this, 150, rowY, { label: t('menu'), icon: 'icon_home', width: 280, height: 92, fontSize: 36, color: COLORS.purple, onClick: () => this.finish('Menu') });
-    this.panel.add([this.retryButton, this.menuButton]);
+    if (camp) {
+      // Campaign: retry, the map, and the next level once this one is won.
+      const next = won && camp.hasNext;
+      const w = next ? 210 : 280;
+      const xs = next ? [-225, 0, 225] : [-150, 150];
+      this.retryButton = new Button(this, xs[0], rowY, { label: t('retry'), icon: 'icon_retry', width: w, height: 92, fontSize: 30, color: COLORS.pink, onClick: () => this.finish('Game') });
+      this.menuButton = new Button(this, xs[1], rowY, { label: t('map'), icon: 'icon_map', width: w, height: 92, fontSize: 30, color: COLORS.purple, onClick: () => this.finish('Menu', { open: 'Campaign' }) });
+      this.panel.add([this.retryButton, this.menuButton]);
+      if (next) {
+        this.nextButton = new Button(this, xs[2], rowY, { label: t('next'), icon: 'icon_play', width: w, height: 92, fontSize: 30, color: COLORS.green, onClick: () => this.finish('Game', { level: camp.level + 1 }) });
+        this.panel.add(this.nextButton);
+      }
+    } else {
+      this.retryButton = new Button(this, -150, rowY, { label: t('retry'), icon: 'icon_retry', width: 280, height: 92, fontSize: 36, color: COLORS.pink, onClick: () => this.finish('Game') });
+      this.menuButton = new Button(this, 150, rowY, { label: t('menu'), icon: 'icon_home', width: 280, height: 92, fontSize: 36, color: COLORS.purple, onClick: () => this.finish('Menu') });
+      this.panel.add([this.retryButton, this.menuButton]);
+    }
 
     if (missionLine) {
       this.missionText = this.add.text(0, panelH - 44, '', textStyle(22, '#7dffb0')).setOrigin(0.5);
@@ -133,7 +166,7 @@ export class GameOverScene extends Phaser.Scene {
       ease: 'Cubic.easeOut',
       onUpdate: () => this.scoreText.setText(fmt(Math.round(counter.v))),
     });
-    if (r.isNewBest) {
+    if (r.isNewBest || won) {
       services.sfx.play('newBest');
       this.tweens.add({ targets: title, scale: { from: 1, to: 1.08 }, duration: 500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     }
@@ -159,6 +192,8 @@ export class GameOverScene extends Phaser.Scene {
     const reward = (x) => [x.coins ? `+${x.coins} ${t('coins')}` : '', x.gems ? `+${x.gems} ${t('gems')}` : ''].filter(Boolean).join('  ');
     const out = [];
     if (r.challengeReward) out.push(`${t('challengeWon')}  ${reward(r.challengeReward)}`);
+    const levelReward = r.campaign?.result?.reward;
+    if (levelReward && (levelReward.coins || levelReward.gems)) out.push(`${t('levelRewardGot')}  ${reward(levelReward)}`);
     for (const l of r.levelsUp) out.push(`${t('levelUp', { n: l.level })}  ${reward(l.reward)}`);
     for (const m of r.missions) out.push(`${t('missionDone')}  ${t(`mission_${m.id}`, { n: m.target })}  ${reward(m.reward)}`);
     return out;
@@ -187,7 +222,7 @@ export class GameOverScene extends Phaser.Scene {
 
   _setBusy(busy) {
     this.busy = busy;
-    for (const b of [this.continueButton, this.retryButton, this.menuButton]) b?.setEnabled(!busy);
+    for (const b of [this.continueButton, this.retryButton, this.menuButton, this.nextButton]) b?.setEnabled(!busy);
     if (!busy) this._refreshContinue();
   }
 
@@ -209,7 +244,7 @@ export class GameOverScene extends Phaser.Scene {
   }
 
   /** Ends the run for good: counts the game for the interstitial frequency. */
-  async finish(target) {
+  async finish(target, extra = {}) {
     if (this.busy) return;
     this._setBusy(true);
     const { ads, save } = services;
@@ -219,10 +254,12 @@ export class GameOverScene extends Phaser.Scene {
     if (target === 'Game') ads.hideBanner();
     const mode = this.result.mode ?? 'endless';
     this.scene.stop('Game');
-    this.scene.start(target, target === 'Game' ? { mode } : undefined);
+    const level = this.result.campaign?.level;
+    this.scene.start(target, target === 'Game' ? { mode, level, ...extra } : extra);
   }
 
   handleBack() {
-    this.finish('Menu');
+    if (this.result.campaign) this.finish('Menu', { open: 'Campaign' });
+    else this.finish('Menu');
   }
 }

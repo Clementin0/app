@@ -341,3 +341,155 @@ describe('v5 threats', () => {
     }
   });
 });
+
+describe('v5 campaign', () => {
+  it('24 levels over the 6 zones, every goal and twist with its texts', async () => {
+    const { CAMPAIGN } = await import('../src/config/campaign.js');
+    const { STRINGS } = await import('../src/i18n.js');
+    expect(CAMPAIGN).toHaveLength(24);
+    for (const level of CAMPAIGN) {
+      expect(level.zone).toBe(Math.floor((level.id - 1) / 4));
+      for (const lang of Object.keys(STRINGS)) {
+        expect(STRINGS[lang][`goal_${level.goal.type}`], `${lang} goal ${level.goal.type}`).toBeTruthy();
+        expect(STRINGS[lang][`goalUnit_${level.goal.type}`]).toBeTruthy();
+        if (level.twist) expect(STRINGS[lang][`twist_${level.twist}`], `${lang} twist ${level.twist}`).toBeTruthy();
+      }
+      expect(level.starCoins || level.starTime).toBeTruthy();
+      if (level.goal.type === 'coins') expect(level.starTime).toBeTruthy(); // a coin star could never be reached
+    }
+  });
+
+  it('a level starts in its zone, ends as won when the goal is reached', async () => {
+    const { getLevel } = await import('../src/config/campaign.js');
+    const level = getLevel(1);
+    const w = new LaneWorld({ rng: createRng(1), campaign: level });
+    expect(w.mode).toBe('campaign');
+    const z = new LaneWorld({ rng: createRng(1), campaign: getLevel(13) });
+    expect(z.zone.index).toBe(3);
+    w.player.invulnerable = 1e9;
+    let done = null;
+    run(w, 120, (world) => {
+      for (const e of world.drainEvents()) if (e.type === 'levelComplete') done = e;
+      world.player.invulnerable = 1e9;
+    });
+    expect(w.state).toBe('won');
+    expect(done.level).toBe(1);
+    expect(w.distance).toBeGreaterThanOrEqual(level.goal.value);
+    expect(w.hud().goal.progress).toBe(level.goal.value);
+  });
+
+  it('twists: no shooting, row weights, enraged bosses instead of fleeing', async () => {
+    const { getLevel } = await import('../src/config/campaign.js');
+    const w = new LaneWorld({ rng: createRng(2), campaign: getLevel(3) });
+    w.setFiring(true);
+    w.fire();
+    run(w, 1);
+    expect(w.shots).toHaveLength(0);
+
+    // Row weights: a boosted row comes up most of the time (never 3 times in a row).
+    const { LaneSpawner } = await import('../src/logic3d/LaneSpawner.js');
+    const share = (weights) => {
+      const sp = new LaneSpawner(createRng(5));
+      let strips = 0;
+      for (let i = 0; i < 300; i++) if (sp.next(6, 25, { weights }).key === 'turboStrip') strips += 1;
+      return strips / 300;
+    };
+    expect(share({ turboStrip: 50 })).toBeGreaterThan(0.4);
+    expect(share({})).toBeLessThan(0.1);
+
+    const b = new LaneWorld({ rng: createRng(3), campaign: getLevel(4) });
+    b.player.invulnerable = 1e9;
+    b.distanceToNext = Infinity;
+    b.zone.start = 0;
+    b.distance = 360;
+    run(b, 1);
+    expect(b.boss).not.toBeNull();
+    b.boss.attackTimer = 1e9;
+    run(b, GAME3D.BOSS.timeLimit + 3, () => (b.boss.attackTimer = 1e9));
+    expect(b.boss?.enraged).toBe(true);
+    expect(b.boss.leaving).toBe(false);
+  });
+
+  it('stars: complete, coins (or time on coin levels), no hearts lost', async () => {
+    const { getLevel, starsFor } = await import('../src/config/campaign.js');
+    const l1 = getLevel(1);
+    expect(starsFor(l1, { won: true, coins: l1.starCoins, hits: 0 })).toEqual([true, true, true]);
+    expect(starsFor(l1, { won: true, coins: 0, hits: 2 })).toEqual([true, false, false]);
+    expect(starsFor(l1, { won: false, coins: 999, hits: 0 })).toEqual([false, false, false]);
+    const l5 = getLevel(5);
+    expect(starsFor(l5, { won: true, coins: 0, hits: 0, time: l5.starTime - 1 })[1]).toBe(true);
+    expect(starsFor(l5, { won: true, coins: 999, hits: 0, time: l5.starTime + 1 })[1]).toBe(false);
+  });
+
+  it('progress is saved: stars never get lost, levels unlock in order, rewards once', async () => {
+    const { SaveData } = await import('../src/services/SaveData.js');
+    const { MemoryStorage } = await import('./helpers.js');
+    const { getLevel, levelReward } = await import('../src/config/campaign.js');
+    const storage = new MemoryStorage();
+    const save = new SaveData(storage);
+    expect(save.isLevelUnlocked(1)).toBe(true);
+    expect(save.isLevelUnlocked(2)).toBe(false);
+    const coins0 = save.data.totalCoins;
+    const first = save.submitLevel(1, [true, false, true]);
+    expect(first.firstClear).toBe(true);
+    expect(first.reward).toEqual({ coins: levelReward(getLevel(1)).coins, gems: 2 });
+    expect(save.data.totalCoins).toBe(coins0 + first.reward.coins);
+    expect(save.isLevelUnlocked(2)).toBe(true);
+    const again = save.submitLevel(1, [true, true, false]);
+    expect(again.firstClear).toBe(false);
+    expect(again.reward).toEqual({ coins: 0, gems: 1 });
+    expect(save.levelStars(1)).toEqual([true, true, true]);
+    expect(save.totalStars).toBe(3);
+    const reloaded = new SaveData(storage);
+    expect(reloaded.levelStars(1)).toEqual([true, true, true]);
+  });
+
+  it('the autopilot clears the early levels of every zone', async () => {
+    const { getLevel } = await import('../src/config/campaign.js');
+    for (const id of [1, 4, 7, 10, 14, 23]) {
+      const w = new LaneWorld({ rng: createRng(id * 31 + 1), campaign: getLevel(id) });
+      const bot = new Autopilot3D(w);
+      run(w, 200, () => w.state === 'running' && bot.update(DT));
+      expect(w.state, `level ${id}: ${w.deathCause} ${w.goalProgress}`).toBe('won');
+    }
+  });
+});
+
+describe('v5 time attack', () => {
+  it('the clock runs down; clocks on the road, kills and near misses add time', () => {
+    const w = new LaneWorld({ rng: createRng(4), mode: 'timeAttack' });
+    expect(w.timeLeft).toBe(GAME3D.TIME_ATTACK.start);
+    w.player.invulnerable = 1e9;
+    run(w, 5, () => (w.player.invulnerable = 1e9));
+    expect(w.timeLeft).toBeLessThan(GAME3D.TIME_ATTACK.start);
+    const before = w.timeLeft;
+    w._collect({ type: 'clock', x: 0, y: 0.5, z: 0 });
+    expect(w.timeLeft).toBeCloseTo(before + GAME3D.TIME_ATTACK.clock, 5);
+    let clocks = 0;
+    run(w, 25, (world) => {
+      world.player.invulnerable = 1e9;
+      clocks = Math.max(clocks, world.entities.filter((e) => e.type === 'clock').length);
+    });
+    expect(clocks).toBeGreaterThan(0);
+  });
+
+  it('time up ends the run; a revive gives some time back', () => {
+    const w = new LaneWorld({ rng: createRng(4), mode: 'timeAttack' });
+    w.distanceToNext = Infinity;
+    w.timeLeft = 0.5;
+    run(w, 1);
+    expect(w.state).toBe('dead');
+    expect(w.deathCause).toBe('time');
+    expect(w.revive()).toBe(true);
+    expect(w.timeLeft).toBeGreaterThanOrEqual(GAME3D.TIME_ATTACK.reviveTime);
+  });
+
+  it('records are saved per mode', async () => {
+    const { SaveData } = await import('../src/services/SaveData.js');
+    const { MemoryStorage } = await import('./helpers.js');
+    const save = new SaveData(new MemoryStorage());
+    expect(save.submitTimeAttack({ score: 500, meters: 300 })).toBe(true);
+    expect(save.submitTimeAttack({ score: 400, meters: 900 })).toBe(false);
+    expect(save.data.timeAttackBest).toEqual({ score: 500, meters: 300 });
+  });
+});

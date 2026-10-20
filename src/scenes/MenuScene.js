@@ -24,8 +24,9 @@ export class MenuScene extends Phaser.Scene {
     super('Menu');
   }
 
-  init() {
+  init(data) {
     // Scene instances are reused: reset per-visit state.
+    this.openOnStart = data?.open ?? null; // an overlay to reopen (campaign map after a level)
     this.starting = false;
     this.leaving = false;
     this.deadFor = 0;
@@ -113,14 +114,15 @@ export class MenuScene extends Phaser.Scene {
     this.tweens.add({ targets: this.titles, y: '-=10', duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
     // Keyboard start only when no overlay (modes, settings) is open.
-    const keyStart = () => !this.scene.isActive('Modes') && !this.scene.isActive('Settings') && this.startGame();
+    const keyStart = () => !this.scene.isActive('Modes') && !this.scene.isActive('Campaign') && !this.scene.isActive('Settings') && this.startGame();
     this.input.keyboard?.on('keydown-SPACE', keyStart);
     this.input.keyboard?.on('keydown-ENTER', keyStart);
 
     bindLayout(this, (w, h) => this.layout(w, h));
 
+    if (this.openOnStart) this.time.delayedCall(250, () => !this.starting && this.scene.launch(this.openOnStart));
     // Daily reward: offered once per day, right after the menu appears.
-    if (save.dailyStatus().available) this.time.delayedCall(450, () => !this.starting && !this.scene.isActive('Daily') && this.scene.launch('Daily'));
+    else if (save.dailyStatus().available) this.time.delayedCall(450, () => !this.starting && !this.scene.isActive('Daily') && this.scene.launch('Daily'));
   }
 
   /** Called by overlays (daily reward) after the wallet changed. */
@@ -155,11 +157,11 @@ export class MenuScene extends Phaser.Scene {
     this.time.delayedCall(450, go);
   }
 
-  /** data.mode: 'endless' (default), 'daily' or 'bossRush'. */
+  /** data.mode: 'endless' (default), 'daily', 'bossRush', 'timeAttack' or 'campaign' (with data.level). */
   startGame(data = {}) {
     if (this.starting || this.scene.isActive('Daily')) return;
     services.ads.hideBanner();
-    this._leaveTo('Game', { mode: data.mode ?? 'endless' });
+    this._leaveTo('Game', { mode: data.mode ?? 'endless', level: data.level });
   }
 
   openModes() {

@@ -1,3 +1,4 @@
+import { CAMPAIGN, getLevel, levelReward, STAR_GEMS } from '../config/campaign.js';
 import { CATALOG, currencyOf, DEFAULT_EQUIPPED, FREE_COINS, getItem } from '../config/cosmetics.js';
 import { getUpgrade, nextCost, UPGRADES } from '../config/upgrades.js';
 import { emptyMissionsState } from '../logic3d/Missions.js';
@@ -41,7 +42,20 @@ function defaults() {
     xp: 0,
     challenge: { day: -1, best: 0, done: false },
     bossRushBest: { bosses: 0, score: 0 },
+    timeAttackBest: { score: 0, meters: 0 },
+    campaign: {}, // level id -> [star, star, star]
   };
+}
+
+/** Campaign stars as saved: only known levels, three booleans each. */
+function sanitizeCampaign(c) {
+  const out = {};
+  if (!c || typeof c !== 'object') return out;
+  for (const level of CAMPAIGN) {
+    const s = c[level.id];
+    if (Array.isArray(s)) out[level.id] = [0, 1, 2].map((i) => s[i] === true);
+  }
+  return out;
 }
 
 function defaultStorage() {
@@ -132,6 +146,8 @@ export class SaveData {
       xp: toCount(p.xp),
       challenge: { day: Number.isInteger(p.challenge?.day) ? p.challenge.day : -1, best: toCount(p.challenge?.best), done: p.challenge?.done === true },
       bossRushBest: { bosses: toCount(p.bossRushBest?.bosses), score: toCount(p.bossRushBest?.score) },
+      timeAttackBest: { score: toCount(p.timeAttackBest?.score), meters: toCount(p.timeAttackBest?.meters) },
+      campaign: sanitizeCampaign(p.campaign),
     };
   }
 
@@ -277,6 +293,49 @@ export class SaveData {
     if (better) this.data.bossRushBest = { bosses: toCount(bosses), score: toCount(score) };
     this.persist();
     return better;
+  }
+
+  /** Time attack record. Returns true for a new record. */
+  submitTimeAttack({ score = 0, meters = 0 } = {}) {
+    const best = this.data.timeAttackBest;
+    const better = score > best.score;
+    if (better) this.data.timeAttackBest = { score: toCount(score), meters: toCount(meters) };
+    this.persist();
+    return better;
+  }
+
+  // ---------------------------------------------------------- campaign
+
+  levelStars(id) {
+    return this.data.campaign[id] ?? [false, false, false];
+  }
+
+  /** Level 1 is open; every other one opens when the previous one is completed. */
+  isLevelUnlocked(id) {
+    return id === 1 || this.levelStars(id - 1)[0];
+  }
+
+  get totalStars() {
+    return Object.values(this.data.campaign).reduce((n, s) => n + s.filter(Boolean).length, 0);
+  }
+
+  /**
+   * Records a level run (stars never get lost). Pays the first clear and a
+   * gem per new star; returns what changed.
+   */
+  submitLevel(id, stars) {
+    const level = getLevel(id);
+    if (!level) return { newStars: [false, false, false], firstClear: false, reward: { coins: 0, gems: 0 } };
+    const before = this.levelStars(id);
+    const after = before.map((had, i) => had || stars[i] === true);
+    const newStars = after.map((has, i) => has && !before[i]);
+    const firstClear = after[0] && !before[0];
+    const reward = { coins: firstClear ? levelReward(level).coins : 0, gems: newStars.filter(Boolean).length * STAR_GEMS };
+    this.data.campaign[id] = after;
+    this.data.totalCoins += reward.coins;
+    this.data.totalGems += reward.gems;
+    this.persist();
+    return { newStars, firstClear, reward, stars: after };
   }
 
   completeTutorial() {

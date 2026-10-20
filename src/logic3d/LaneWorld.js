@@ -1,5 +1,6 @@
 import { GAME3D, laneX } from '../config/game3d.config.js';
 import { getPerk, PERK_TUNING, PERKS } from '../config/perks.js';
+import { goalProgress } from '../config/campaign.js';
 import { zoneTheme } from '../config/zones.js';
 import { createRng } from '../logic/rng.js';
 import { ScoreManager } from '../logic/ScoreManager.js';
@@ -27,7 +28,7 @@ const NEAR_MISS_TYPES = new Set(['wall', 'barrier', 'beam', 'slider', 'platform'
  * Optional rules of a run (daily challenge, boss rush): speed and score
  * multipliers, fixed hearts or weapon, forced events, bosses sooner.
  */
-export const DEFAULT_MODIFIERS = Object.freeze({ speed: 1, score: 1, hp: null, weapon: null, event: null, bossAt: null });
+export const DEFAULT_MODIFIERS = Object.freeze({ speed: 1, score: 1, hp: null, weapon: null, event: null, bossAt: null, noShoot: false, weights: null });
 
 function overlaps(a, b) {
   return a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0 && a.z0 < b.z1 && a.z1 > b.z0;
@@ -44,14 +45,16 @@ export function entityBox(e) {
  * rewarded revive. Rendering (Three.js) and HUD (Phaser) only read its state.
  */
 export class LaneWorld {
-  constructor({ rng, config = GAME3D, best = 0, loadout = {}, mode = 'endless', modifiers = {}, courseSeed = null } = {}) {
+  constructor({ rng, config = GAME3D, best = 0, loadout = {}, mode = 'endless', modifiers = {}, courseSeed = null, campaign = null } = {}) {
     this.cfg = config;
     this.rng = rng ?? createRng();
     // The course (rows, power-ups, events) can have its own seed, so the
     // daily challenge stays the same whatever the player shoots.
     this.courseRng = courseSeed === null ? this.rng : createRng(courseSeed);
-    this.mode = mode; // 'endless' | 'daily' | 'bossRush'
-    this.modifiers = { ...DEFAULT_MODIFIERS, ...modifiers };
+    // A campaign level: a goal, a starting zone and its own rules.
+    this.campaign = campaign;
+    this.mode = campaign ? 'campaign' : mode; // 'endless' | 'daily' | 'bossRush' | 'timeAttack' | 'campaign'
+    this.modifiers = { ...DEFAULT_MODIFIERS, ...(campaign?.modifiers ?? {}), ...modifiers, ...(campaign?.weights ? { weights: campaign.weights } : {}) };
     this.loadout = { ...DEFAULT_LOADOUT, ...loadout };
     if (this.modifiers.weapon) this.loadout.weapon = this.modifiers.weapon;
     this.spawner = new LaneSpawner(this.courseRng, config);
@@ -110,7 +113,10 @@ export class LaneWorld {
     this.eshots = [];
     this.waves = []; // boss quakes and lasers rolling towards the player
     this.boss = null;
-    this.zone = { index: 0, start: 0, bossDone: false, cooldown: 0, eventsDone: 0 };
+    this.zone = { index: this.campaign?.zone ?? 0, start: 0, bossDone: false, cooldown: 0, eventsDone: 0 };
+    this.level = Math.min(8, this.zone.index * 2);
+    this.timeLeft = this.mode === 'timeAttack' ? this.cfg.TIME_ATTACK.start : null;
+    this.rowsSinceClock = 0;
     this.perks = {};
     this.startFirepower = this.firepower; // boss rush health scales from here
     this.perkOffer = null; // 3 perk ids to choose from, after a boss
@@ -153,7 +159,7 @@ export class LaneWorld {
     // Tutorial hooks: no random rows, and nothing can hurt the player.
     this.spawnPaused = false;
     this.safe = false;
-    this.stats = { kills: 0, drones: 0, walkers: 0, crates: 0, chargers: 0, turrets: 0, bombers: 0, bosses: 0, jumps: 0, slides: 0, shots: 0, events: 0, perks: 0, killsSinceHeal: 0, turbos: 0, ramps: 0, smashed: 0, nearMisses: 0, overdrives: 0, snipers: 0, guards: 0, cars: 0 };
+    this.stats = { kills: 0, drones: 0, walkers: 0, crates: 0, chargers: 0, turrets: 0, bombers: 0, bosses: 0, jumps: 0, slides: 0, shots: 0, events: 0, perks: 0, killsSinceHeal: 0, turbos: 0, ramps: 0, smashed: 0, nearMisses: 0, overdrives: 0, snipers: 0, guards: 0, cars: 0, hits: 0, clocks: 0 };
     this.spawner.reset();
     // First rows appear ~50 m ahead, so the action starts within seconds.
     this.distanceToNext = 50 - this.cfg.WORLD.spawnZ;
@@ -261,12 +267,12 @@ export class LaneWorld {
 
   /** Hold-to-fire. */
   setFiring(firing) {
-    this.player.firing = !!firing;
+    this.player.firing = !!firing && !this.modifiers.noShoot;
   }
 
   /** Single tap: fire as soon as the weapon is ready. */
   fire() {
-    if (this.state !== 'running') return;
+    if (this.state !== 'running' || this.modifiers.noShoot) return;
     this.player.queuedShots = Math.min(2, this.player.queuedShots + 1);
   }
 
@@ -312,8 +318,37 @@ export class LaneWorld {
     if (this.state === 'running') this._updatePickups(delta);
     this._updateTimers(delta);
     this._cleanup();
+    this._updateMode(delta);
 
     if (this.score.checkPassedBest()) this._emit('newBest', { score: this.score.score });
+  }
+
+  // ------------------------------------------------- campaign & time attack
+
+  /** Progress towards the campaign goal (0 outside the campaign). */
+  get goalProgress() {
+    return this.campaign ? goalProgress(this.campaign.goal, this) : 0;
+  }
+
+  _updateMode(dt) {
+    if (this.state !== 'running') return;
+    if (this.campaign && this.goalProgress >= this.campaign.goal.value) {
+      this.state = 'won';
+      this.player.firing = false;
+      this._emit('levelComplete', { level: this.campaign.id, hits: this.stats.hits, coins: this.score.coins });
+      return;
+    }
+    if (this.timeLeft !== null) {
+      this.timeLeft = Math.max(0, this.timeLeft - dt);
+      if (this.timeLeft === 0) this._die('time');
+    }
+  }
+
+  /** Time attack: seconds added (clocks, kills, near misses, bosses). */
+  _addTime(seconds, source) {
+    if (this.timeLeft === null || seconds <= 0) return;
+    this.timeLeft += seconds;
+    this._emit('timeBonus', { seconds, source });
   }
 
   /**
@@ -323,7 +358,9 @@ export class LaneWorld {
   _speedAt(time) {
     const { SPEED } = this.cfg;
     const top = SPEED.max * (this.perks.slowmo ? PERK_TUNING.slowmo : 1);
-    const base = top - (top - SPEED.start) * Math.exp(-time / SPEED.rampTime);
+    // Time attack ramps up faster.
+    const ramp = this.mode === 'timeAttack' ? this.cfg.TIME_ATTACK.rampTime : SPEED.rampTime;
+    const base = top - (top - SPEED.start) * Math.exp(-time / ramp);
     const event = this.event ? (this.cfg.EVENTS[this.event.type]?.speed ?? 1) : 1;
     return base * event * this.modifiers.speed;
   }
@@ -586,8 +623,14 @@ export class LaneWorld {
       this.score.addGem(3);
       this._emit('bossDefeated', { x: b.x, y: b.y + b.h / 2, z: b.z, coins: 40, gems: 3 });
       this._gainOverdrive(this.cfg.OVERDRIVE.gain.boss);
+      this._addTime(this.cfg.TIME_ATTACK.boss, 'boss');
     } else {
       this._emit('bossFled', {});
+      if (this.campaign?.goal.type === 'boss') {
+        this.boss = null;
+        this._die('bossFled');
+        return;
+      }
     }
     this.boss = null;
     this.zone = { index: this.zone.index + 1, start: this.distance, bossDone: false, cooldown: 2.5, eventsDone: 0 };
@@ -608,16 +651,17 @@ export class LaneWorld {
     b.x = Math.sin(b.t * 0.7) * LANES.width * 0.85;
 
     const rush = this.mode === 'bossRush';
+    // Boss rush and campaign: no escape, the boss gets enraged instead.
+    const noEscape = rush || this.mode === 'campaign';
     if (b.shield > 0) {
       b.shield = Math.max(0, b.shield - dt);
       if (b.shield === 0) this._emit('bossShieldDown', { x: b.x, y: b.y + b.h / 2, z: b.z });
     }
-    // Boss rush: no escape, the boss gets enraged instead.
-    if (rush && !b.enraged && b.lifetime > this.cfg.BOSS_RUSH.enrageAfter) {
+    if (noEscape && !b.enraged && b.lifetime > (rush ? this.cfg.BOSS_RUSH.enrageAfter : BOSS.timeLimit)) {
       b.enraged = true;
       this._emit('bossEnraged', { x: b.x, y: b.y + b.h / 2, z: b.z });
     }
-    if (!rush && b.lifetime > BOSS.timeLimit && !b.leaving && b.shield <= 0) {
+    if (!noEscape && b.lifetime > BOSS.timeLimit && !b.leaving && b.shield <= 0) {
       b.leaving = true;
       this._emit('bossLeaving', {});
     }
@@ -812,8 +856,13 @@ export class LaneWorld {
           ? this.spawner.goldRush(speed)
           : quiet
             ? this.spawner.coinsOnly(speed)
-            : this.spawner.next(this.level, speed, { lowGravity: ev === 'lowGravity' });
+            : this.spawner.next(this.level, speed, { lowGravity: ev === 'lowGravity', weights: this.modifiers.weights });
       for (const item of pattern.items) this._addEntity(item, z0);
+      // Time attack: a clock every few rows, in the gap after the row.
+      if (this.timeLeft !== null && ++this.rowsSinceClock >= this.cfg.TIME_ATTACK.clockEvery) {
+        this.rowsSinceClock = 0;
+        this._addEntity({ type: 'clock', lane: this.courseRng.int(0, 2), dz: pattern.length + pattern.gapAfter / 2, y: 0.7 }, z0);
+      }
 
       if (!bossPhase && !ev && this.courseTime >= this.nextPowerupAt) {
         const type = this._pickPowerup();
@@ -1097,6 +1146,7 @@ export class LaneWorld {
 
   _turboSmash(e) {
     if (e.kind === 'enemy') {
+      this.stats.smashed += 1;
       this._kill(e);
       return;
     }
@@ -1472,6 +1522,7 @@ export class LaneWorld {
     if (e.type === 'guard') this.stats.guards += 1;
     if (e.type === 'car') this.stats.cars += 1;
     this._gainOverdrive(this.cfg.OVERDRIVE.gain.kill);
+    this._addTime(this.cfg.TIME_ATTACK.kill, 'kill');
     this._emit('kill', { id: e.id, enemy: e.type, x: e.x, y: e.y + e.h / 2, z: e.z, points, combo: c.count });
     if (c.count >= 2) this._emit('combo', { count: c.count });
 
@@ -1577,6 +1628,7 @@ export class LaneWorld {
       this.score.addBonus(points);
       this.stats.nearMisses += 1;
       this._gainOverdrive(this.cfg.OVERDRIVE.gain.nearMiss);
+      this._addTime(this.cfg.TIME_ATTACK.nearMiss, 'nearMiss');
       this._emit('nearMiss', { x: e.x, y: e.y + e.h / 2, z: e.z, points });
     }
   }
@@ -1606,6 +1658,7 @@ export class LaneWorld {
       return;
     }
     p.hp -= 1;
+    this.stats.hits += 1;
     p.invulnerable = this.cfg.PLAYER.hitGrace;
     this.combo.count = 0;
     this.combo.timer = 0;
@@ -1690,6 +1743,10 @@ export class LaneWorld {
         p.rockets = POWERUPS.rockets * lucky;
         p.rocketTimer = 0;
         break;
+      case 'clock':
+        this.stats.clocks += 1;
+        this._addTime(this.cfg.TIME_ATTACK.clock, 'clock');
+        break;
       case 'jetpack':
         this._startJetpack();
         break;
@@ -1764,7 +1821,8 @@ export class LaneWorld {
   // ------------------------------------------------------------ revive
 
   get canRevive() {
-    return this.state === 'dead' && !this.reviveUsed;
+    // A campaign boss that got away cannot be brought back.
+    return this.state === 'dead' && !this.reviveUsed && this.deathCause !== 'bossFled';
   }
 
   /** Second chance (rewarded ad): full health, nearby threats cleared, short invulnerability. */
@@ -1785,6 +1843,7 @@ export class LaneWorld {
     p.turbo = 0;
     p.turboK = 0;
     p.invulnerable = this.cfg.POWERUPS.reviveGrace;
+    if (this.timeLeft !== null) this.timeLeft = Math.max(this.timeLeft, this.cfg.TIME_ATTACK.reviveTime);
     if (this.boss) this.boss.attackTimer = 3;
     this.state = 'running';
     this.deathCause = null;
@@ -1820,6 +1879,8 @@ export class LaneWorld {
       turbo: p.turbo,
       od: p.od,
       overdrive: p.overdrive,
+      timeLeft: this.timeLeft,
+      goal: this.campaign ? { type: this.campaign.goal.type, value: this.campaign.goal.value, progress: Math.min(this.campaign.goal.value, this.goalProgress) } : null,
       event: this.event ? { type: this.event.type, left: Math.max(0, this.event.duration - this.event.t), duration: this.event.duration } : null,
       perks: { ...this.perks },
     };

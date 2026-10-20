@@ -303,6 +303,19 @@ export function powerupIconTexture(type) {
           ctx.fill();
         }
         break;
+      case 'clock':
+        ctx.lineWidth = 12;
+        ctx.beginPath();
+        ctx.arc(c, c + 4, 40, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(c, c + 4);
+        ctx.lineTo(c, c - 24);
+        ctx.moveTo(c, c + 4);
+        ctx.lineTo(c + 22, c + 16);
+        ctx.stroke();
+        ctx.fillRect(c - 12, 6, 24, 12);
+        break;
       case 'rockets':
         // A rocket pointing up-right, with fins and a flame.
         ctx.translate(c, c);

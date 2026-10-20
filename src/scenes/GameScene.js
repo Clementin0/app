@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { getLevel, starsFor } from '../config/campaign.js';
 import { bossKind } from '../config/game3d.config.js';
 import { zoneTheme } from '../config/zones.js';
 import { loadoutFrom } from '../config/upgrades.js';
@@ -12,6 +13,7 @@ import { AutoQuality, lowerQuality } from '../services/AutoQuality.js';
 import { dailyChallenge } from '../services/DailyChallenge.js';
 import { services } from '../services/services.js';
 import { GameView } from '../three/GameView.js';
+import { goalText } from './CampaignScene.js';
 import { Hud } from '../ui/Hud.js';
 import { bindLayout } from '../ui/layout.js';
 import { COLORS } from '../ui/theme.js';
@@ -76,8 +78,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   init(data) {
-    // 'endless' (classic), 'daily' (seeded challenge) or 'bossRush'.
+    // 'endless' (classic), 'daily' (seeded challenge), 'bossRush', 'timeAttack' or 'campaign'.
     this.mode = data?.mode ?? 'endless';
+    this.levelId = this.mode === 'campaign' ? (data?.level ?? 1) : null;
+    // Scene instances are reused: nothing may leak from the previous run.
+    this.level = null;
+    this.levelResult = null;
+    this.hints = null;
+    this.won = false;
+    this.timeAttackRecord = false;
     this.countdownTimer = null;
     this.gestures = new Map();
     this.autoQuality = new AutoQuality();
@@ -113,15 +122,21 @@ export class GameScene extends Phaser.Scene {
       this.startBest = save.challengeStatus().best;
     } else if (this.mode === 'bossRush') {
       this.startBest = snap.bossRushBest.score;
+    } else if (this.mode === 'timeAttack') {
+      this.startBest = snap.timeAttackBest.score;
+    } else if (this.mode === 'campaign') {
+      this.level = getLevel(this.levelId) ?? getLevel(1);
+      this.levelId = this.level.id;
+      this.startBest = 0;
     } else {
       this.startBest = save.highScore;
     }
 
-    this.world = new LaneWorld({ rng, best: this.startBest, loadout: loadoutFrom(snap), mode: this.mode, modifiers, courseSeed });
+    this.world = new LaneWorld({ rng, best: this.startBest, loadout: loadoutFrom(snap), mode: this.mode, modifiers, courseSeed, campaign: this.level ?? null });
     this.view = stage.setView(new GameView(stage, this.world, { equipped: snap.equipped }));
     this.hud = new Hud(this, { onPause: () => this.pauseGame(), onSkipTutorial: () => this.tutorial?.finish(), onOverdrive: () => this.triggerOverdrive() });
 
-    music.setZone(0);
+    music.setZone(this.world.zone.index);
     music.start(1);
     music.setIntensity(1);
     music.duck(false);
@@ -135,6 +150,13 @@ export class GameScene extends Phaser.Scene {
     } else if (this.mode === 'bossRush') {
       this.hud.setModeLabel(t('modeBossRush'), COLORS.pink);
       this.hud.showMessage(t('modeBossRush'), COLORS.pink, 1500, 60);
+    } else if (this.mode === 'timeAttack') {
+      this.hud.setModeLabel(t('modeTimeAttack'), COLORS.green);
+      this.hud.showMessage(t('modeTimeAttack'), COLORS.green, 1500, 60, t('modeTimeAttackDesc'));
+    } else if (this.mode === 'campaign') {
+      const twist = this.level.twist ? ` · ${t(`twist_${this.level.twist}`)}` : '';
+      this.hud.setModeLabel(`${t('levelTitle', { n: this.level.id })}${twist}`, COLORS.cyan);
+      this.hud.showMessage(t('levelTitle', { n: this.level.id }), zoneTheme(this.level.zone).line, 2000, 60, goalText(this.level));
     } else if (!this.tutorial) this._showZoneTitle(0, 0);
 
     this._bindInput();
@@ -299,7 +321,14 @@ export class GameScene extends Phaser.Scene {
       const reward = save.submitChallenge({ score: summary.score, bosses: w.stats.bosses, day: this.challenge.day });
       this.challengeReward ??= reward;
     } else if (this.mode === 'bossRush') this.bossRushRecord = save.submitBossRush({ bosses: w.stats.bosses, score: summary.score }) || this.bossRushRecord;
-    else save.submitScore(summary.score, summary.meters);
+    else if (this.mode === 'timeAttack') this.timeAttackRecord = save.submitTimeAttack({ score: summary.score, meters: summary.meters }) || this.timeAttackRecord;
+    else if (this.mode === 'campaign') {
+      // Stars are saved once, when the level is won (a lost run only keeps coins and XP).
+      if (this.won && !this.levelResult) {
+        const stars = starsFor(this.level, { won: true, coins: summary.coins, hits: w.stats.hits, time: w.time });
+        this.levelResult = { ...save.submitLevel(this.level.id, stars), earned: stars };
+      }
+    } else save.submitScore(summary.score, summary.meters);
     save.addCurrency(summary.coins - this.committed.coins, summary.gems - this.committed.gems);
 
     const stats = this.runStats();
@@ -324,6 +353,19 @@ export class GameScene extends Phaser.Scene {
     services.save.addLifetime({ kills: s.kills, bosses: s.bosses });
   }
 
+  /** Campaign goal reached: a short celebration, then the results. */
+  _onLevelComplete() {
+    const { sfx, haptics, music } = services;
+    this.won = true;
+    this.phase = 'dying';
+    this.world.setFiring(false);
+    sfx.play('newBest');
+    haptics.success();
+    music.setIntensity(1);
+    this.hud.showMessage(t('levelComplete'), COLORS.green, 1400, 64);
+    this.time.delayedCall(1300, () => this.showGameOver());
+  }
+
   _onDeath() {
     this.phase = 'dying';
     this._freeze(false);
@@ -335,15 +377,19 @@ export class GameScene extends Phaser.Scene {
   showGameOver() {
     if (this.phase === 'over') return;
     this.phase = 'over';
+    this.hud.clearMessage();
     this._freeze(true);
     services.music.duck(true);
     const summary = this.commitProgress();
     const s = services.save.snapshot();
+    const bestByMode = { endless: summary.best, bossRush: s.bossRushBest.score, timeAttack: s.timeAttackBest.score, campaign: summary.score };
     this.scene.launch('GameOver', {
       ...summary,
-      best: this.mode === 'endless' ? summary.best : this.mode === 'bossRush' ? s.bossRushBest.score : Math.max(summary.score, this.startBest),
+      best: bestByMode[this.mode] ?? Math.max(summary.score, this.startBest),
       // Boss rush records go by bosses beaten first (as saved), then score.
-      isNewBest: this.mode === 'bossRush' ? this.bossRushRecord : summary.score > this.startBest && summary.score > 0,
+      isNewBest: this.mode === 'bossRush' ? this.bossRushRecord : this.mode === 'timeAttack' ? this.timeAttackRecord : this.mode === 'campaign' ? false : summary.score > this.startBest && summary.score > 0,
+      campaign: this.mode === 'campaign' ? { level: this.level.id, won: this.won, result: this.levelResult, hasNext: !!getLevel(this.level.id + 1), goal: goalText(this.level), progress: this.world.goalProgress, target: this.level.goal.value } : null,
+      timeUp: this.world.deathCause === 'time',
       previousBest: this.startBest,
       mode: this.mode,
       bosses: this.world.stats.bosses,
@@ -352,7 +398,7 @@ export class GameScene extends Phaser.Scene {
       levelXp: s.xp,
       levelsUp: this.levelsUp.splice(0),
       challengeReward: this.challengeReward && !this.challengeShown ? this.challengeReward : null,
-      canRevive: this.world.canRevive,
+      canRevive: !this.won && this.world.canRevive,
       kills: this.world.stats.kills,
       zone: this.world.zone.index + 1,
       missions: this.completedMissions.splice(0),
@@ -518,7 +564,8 @@ export class GameScene extends Phaser.Scene {
         break;
       case 'powerup':
         haptics.light();
-        this.hud.showMessage(t(e.kind), COLORS.green, 800, 46);
+        // A clock shows its "+4s" by the timer instead.
+        if (e.kind !== 'clock') this.hud.showMessage(t(e.kind), COLORS.green, 800, 46);
         break;
       case 'bossSpawn':
         music.setIntensity(2);
@@ -617,7 +664,15 @@ export class GameScene extends Phaser.Scene {
         break;
       case 'death':
         haptics.heavy();
+        if (e.cause === 'time') this.hud.showMessage(t('timeUp'), COLORS.red, 1100, 64);
+        if (e.cause === 'bossFled') this.hud.showMessage(t('bossFled'), COLORS.purple, 1100, 50);
         this._onDeath();
+        break;
+      case 'levelComplete':
+        this._onLevelComplete();
+        break;
+      case 'timeBonus':
+        this.hud.timeBonus(e.seconds);
         break;
       default:
         break;

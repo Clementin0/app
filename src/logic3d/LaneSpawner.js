@@ -420,11 +420,14 @@ export class LaneSpawner {
     const [a, b] = this.history.slice(-2);
     let pool = PATTERNS3D.filter((p) => level >= p.minLevel && (!p.allowed || p.allowed(ctx)) && !(lowGravity && LOW_GRAVITY_SKIP.has(p.key)));
     if (a && a === b) pool = pool.filter((p) => p.key !== a);
-    const total = pool.reduce((s, p) => s + p.weight(level), 0);
+    // A campaign level can make some rows much more likely.
+    const boost = opts.weights ?? {};
+    const weight = (p) => p.weight(level) * (boost[p.key] ?? 1);
+    const total = pool.reduce((s, p) => s + weight(p), 0);
     let roll = this.rng.next() * total;
     let pick = pool[pool.length - 1];
     for (const p of pool) {
-      roll -= p.weight(level);
+      roll -= weight(p);
       if (roll <= 0) {
         pick = p;
         break;

@@ -19,6 +19,7 @@ export class Autopilot3D {
   }
 
   _killTime(e) {
+    if (this.world.modifiers.noShoot) return Infinity;
     const w = this.world.weaponStats;
     return ((e.hp + (e.shieldHp > 0 ? e.shieldHp : 0)) / w.damage) * w.interval + 0.15;
   }
