@@ -105,9 +105,11 @@ export class LaneWorld {
     this.entities = [];
     this.shots = [];
     this.eshots = [];
+    this.waves = []; // boss quakes and lasers rolling towards the player
     this.boss = null;
     this.zone = { index: 0, start: 0, bossDone: false, cooldown: 0, eventsDone: 0 };
     this.perks = {};
+    this.startFirepower = this.firepower; // boss rush health scales from here
     this.perkOffer = null; // 3 perk ids to choose from, after a boss
     this.event = null; // run event in progress (gold rush, ambush, meteors)
     this.lastEvent = null;
@@ -329,7 +331,8 @@ export class LaneWorld {
 
   /** Up to `n` distinct perks that are not maxed yet. */
   rollPerks(n = 3) {
-    const pool = PERKS.filter((p) => this.perkLevel(p.id) < p.max).map((p) => p.id);
+    const banned = this.mode === 'bossRush' ? this.cfg.BOSS_RUSH.noPerks : [];
+    const pool = PERKS.filter((p) => this.perkLevel(p.id) < p.max && !banned.includes(p.id)).map((p) => p.id);
     const out = [];
     while (out.length < n && pool.length) out.push(pool.splice(this.rng.int(0, pool.length - 1), 1)[0]);
     return out;
@@ -467,10 +470,21 @@ export class LaneWorld {
     return e;
   }
 
+  /** Damage per second of the current weapon, perks included (all shots on a wide target). */
+  get firepower() {
+    const w = this.weaponStats;
+    const shots = (w.pattern === 'twin' ? 2 : w.pattern === 'spread' ? 3 : 1) + (w.multishot ? 2 : 0);
+    return (w.damage * shots) / w.interval;
+  }
+
   _spawnBoss() {
-    const { BOSS } = this.cfg;
+    const { BOSS, BOSS_RUSH } = this.cfg;
     const zone = this.zone.index;
-    const hp = BOSS.baseHp + BOSS.hpPerZone * zone;
+    const rush = this.mode === 'bossRush';
+    // Boss rush: tougher every time, and as tough as the perks make you strong.
+    const hp = rush
+      ? Math.round((BOSS_RUSH.hpBase + BOSS_RUSH.hpPerBoss * zone) * Math.pow(Math.max(1, this.firepower / this.startFirepower), BOSS_RUSH.dpsExponent))
+      : BOSS.baseHp + BOSS.hpPerZone * zone;
     const kinds = this.cfg.BOSS_KINDS ?? GAME3D.BOSS_KINDS;
     const bossKind = kinds[zone % kinds.length];
     this.boss = {
@@ -496,6 +510,10 @@ export class LaneWorld {
       queueTimer: 0,
       lifetime: 0,
       leaving: false,
+      shield: 0, // seconds of shield left
+      shieldAt: [...(rush || zone >= 3 ? BOSS.shieldAtLate : BOSS.shieldAt)],
+      shieldIndex: 0,
+      enraged: false,
     };
     this._emit('bossSpawn', { zone, hp, bossKind: bossKind.id });
   }
@@ -503,6 +521,9 @@ export class LaneWorld {
   _finishBoss(defeated) {
     const b = this.boss;
     if (!b) return;
+    // Its attacks still on the way vanish with it.
+    this.waves = [];
+    this.eshots = this.eshots.filter((s) => s.source !== 'boss');
     if (defeated) {
       this.stats.bosses += 1;
       const mult = this.player.double > 0 ? 2 : 1;
@@ -531,7 +552,17 @@ export class LaneWorld {
     if (b.z > BOSS.z) b.z = Math.max(BOSS.z, b.z - this.speed * 0.6 * dt);
     b.x = Math.sin(b.t * 0.7) * LANES.width * 0.85;
 
-    if (b.lifetime > BOSS.timeLimit && !b.leaving) {
+    const rush = this.mode === 'bossRush';
+    if (b.shield > 0) {
+      b.shield = Math.max(0, b.shield - dt);
+      if (b.shield === 0) this._emit('bossShieldDown', { x: b.x, y: b.y + b.h / 2, z: b.z });
+    }
+    // Boss rush: no escape, the boss gets enraged instead.
+    if (rush && !b.enraged && b.lifetime > this.cfg.BOSS_RUSH.enrageAfter) {
+      b.enraged = true;
+      this._emit('bossEnraged', { x: b.x, y: b.y + b.h / 2, z: b.z });
+    }
+    if (!rush && b.lifetime > BOSS.timeLimit && !b.leaving && b.shield <= 0) {
       b.leaving = true;
       this._emit('bossLeaving', {});
     }
@@ -555,10 +586,78 @@ export class LaneWorld {
     }
     b.attackTimer -= dt;
     if (b.attackTimer > 0) return;
-    const pattern = b.patterns[b.attackIndex % b.patterns.length];
-    b.attackIndex += 1;
-    b.attackTimer = Math.max(0.8, BOSS.attackEvery - BOSS.attackSpeedup * this.zone.index);
+    const { BOSS_RUSH, SHIELD_PATTERNS, BOSS_COMBOS } = this.cfg;
+    const n = this.zone.index;
+    let pattern;
+    if (b.shield > 0) {
+      // Shielded: a fast barrage of attacks that have to be dodged.
+      pattern = SHIELD_PATTERNS[b.shieldIndex++ % SHIELD_PATTERNS.length];
+      b.attackTimer = BOSS.shieldAttackEvery;
+    } else {
+      pattern = b.patterns[b.attackIndex % b.patterns.length];
+      b.attackIndex += 1;
+      b.attackTimer = rush
+        ? Math.max(BOSS_RUSH.minAttackEvery, BOSS_RUSH.attackEvery - BOSS_RUSH.attackSpeedup * n)
+        : Math.max(0.8, BOSS.attackEvery - BOSS.attackSpeedup * n);
+      if (b.enraged) b.attackTimer *= BOSS_RUSH.enrageSpeed;
+    }
     this._bossAttack(b, pattern);
+    // Later on, a second attack comes with the first (always a fair pair).
+    const combosFrom = rush ? BOSS_RUSH.combosFrom : BOSS.combosFrom;
+    const chance = rush ? BOSS_RUSH.comboChance : BOSS.comboChance;
+    const second = BOSS_COMBOS[pattern];
+    if (second && b.shield <= 0 && n >= combosFrom && this.rng.chance(chance)) {
+      this._bossAttack(b, second);
+      b.attackTimer += 0.5; // a little breather after a double attack
+    }
+  }
+
+  /** Damage to the boss: shields absorb it, and each phase threshold raises one. */
+  _damageBoss(b, damage, x, y, z) {
+    if (b.shield > 0 || b.leaving) {
+      this._emit('shotBlocked', { x, y, z, boss: true });
+      return;
+    }
+    const next = b.shieldAt[0];
+    if (next !== undefined && b.hp - damage <= next * b.maxHp) {
+      b.shieldAt.shift();
+      b.hp = Math.ceil(next * b.maxHp);
+      b.shield = this.cfg.BOSS.shieldTime;
+      b.queue = [];
+      b.attackTimer = 0.7;
+      this._emit('hit', { id: b.id, x: b.x, y: b.y + b.h / 2, z: b.z, enemy: 'boss', boss: true });
+      this._emit('bossShield', { x: b.x, y: b.y + b.h / 2, z: b.z, duration: b.shield });
+      return;
+    }
+    this._damageEnemy(b, damage);
+  }
+
+  /** Quake (ground wave: jump) or laser (chest-high beam: slide), from the boss towards the player. */
+  _spawnWave(kind, z) {
+    const c = this.cfg.BOSS[kind];
+    this.waves.push({ id: this.nextId++, kind, z, speed: c.speed, y0: c.y0, y1: c.y1, charge: c.charge ?? 0, hit: false, dead: false });
+    this._emit('bossWave', { kind, z, charge: c.charge ?? 0 });
+  }
+
+  _updateWaves(dt) {
+    if (!this.waves.length) return;
+    const box = this.playerBox();
+    for (const wv of this.waves) {
+      if (wv.charge > 0) {
+        wv.charge -= dt;
+        continue;
+      }
+      const prev = wv.z;
+      wv.z -= wv.speed * dt;
+      // Swept: it may cross the runner within one long step.
+      if (!wv.hit && prev >= box.z0 && wv.z <= box.z1 && box.y0 < wv.y1 && box.y1 > wv.y0) {
+        wv.hit = true;
+        this._damage(wv.kind);
+        if (this.state !== 'running') return;
+      }
+      if (wv.z < this.cfg.WORLD.despawnZ) wv.dead = true;
+    }
+    this.waves = this.waves.filter((wv) => !wv.dead);
   }
 
   _bossAttack(b, pattern) {
@@ -589,6 +688,18 @@ export class LaneWorld {
         this._emit('bossDrop', { x: b.x, y: b.y, z: b.z - 2, lanes: picked });
         break;
       }
+      case 'heavy': {
+        // Heavy plasma on two lanes: shots cannot stop it, change lane.
+        const free = this.rng.int(0, lanes - 1);
+        for (let lane = 0; lane < lanes; lane++) if (lane !== free) this._enemyShot(laneX(lane), b.z - 1.5, 'boss', true);
+        break;
+      }
+      case 'quake':
+        this._spawnWave('quake', b.z - 1);
+        break;
+      case 'laser':
+        this._spawnWave('laser', b.z - 1.5);
+        break;
       case 'meteors': {
         // Two lanes blasted, one left free.
         const free = this.rng.int(0, lanes - 1);
@@ -1003,10 +1114,11 @@ export class LaneWorld {
 
   // ----------------------------------------------------------- enemies
 
-  _enemyShot(x, z, source) {
-    const { BULLETS } = this.cfg;
-    this.eshots.push({ id: this.nextId++, x, y: BULLETS.enemyHeight, z, r: BULLETS.enemyRadius, source });
-    this._emit('enemyShot', { x, z, source });
+  _enemyShot(x, z, source, heavy = false) {
+    const { BULLETS, BOSS } = this.cfg;
+    if (heavy) this.eshots.push({ id: this.nextId++, x, y: BOSS.heavy.y, z, r: BOSS.heavy.radius, speed: BOSS.heavy.speed, heavy: true, source });
+    else this.eshots.push({ id: this.nextId++, x, y: BULLETS.enemyHeight, z, r: BULLETS.enemyRadius, source });
+    this._emit('enemyShot', { x, z, source, heavy });
   }
 
   _updateEnemies(dt) {
@@ -1069,6 +1181,7 @@ export class LaneWorld {
       }
     }
     this._updateBoss(dt);
+    this._updateWaves(dt);
   }
 
   _updateBomber(e, dt) {
@@ -1150,13 +1263,17 @@ export class LaneWorld {
           break;
         }
         s.hits.add(e.id);
-        this._damageEnemy(e, s.damage);
+        if (e.kind === 'boss') {
+          // A shield stops everything, piercing shots included.
+          if (e.shield > 0) s.dead = true;
+          this._damageBoss(e, s.damage, s.x, s.y, Math.max(zMin, prevZ));
+        } else this._damageEnemy(e, s.damage);
         if (s.rocket) this._rocketBlast(s, e);
         if (!s.pierce) s.dead = true;
       }
       if (s.dead) continue;
       for (const b of this.eshots) {
-        if (b.dead) continue;
+        if (b.dead || b.heavy) continue; // heavy plasma soaks shots up
         if (Math.abs(b.x - s.x) < 0.6 && b.z >= prevZ - 0.5 && b.z <= s.z + 0.5) {
           b.dead = true;
           if (!s.pierce) s.dead = true;
@@ -1168,7 +1285,7 @@ export class LaneWorld {
 
     for (const b of this.eshots) {
       if (b.dead) continue;
-      b.z -= BULLETS.enemySpeed * dt;
+      b.z -= (b.speed ?? BULLETS.enemySpeed) * dt;
       if (b.z < this.cfg.WORLD.despawnZ) b.dead = true;
     }
   }
@@ -1491,6 +1608,7 @@ export class LaneWorld {
     this.entities = this.entities.filter((e) => e.kind === 'pickup' || e.z > 45);
     this.eshots = [];
     this.shots = [];
+    this.waves = [];
     p.hp = this.maxHp;
     p.y = 0;
     p.vy = 0;
@@ -1528,7 +1646,7 @@ export class LaneWorld {
       comboTimer: this.combo.timer,
       zone: this.zone.index,
       zoneProgress: Math.min(1, this.zoneProgress / this.bossAt),
-      boss: b ? { hp: Math.max(0, b.hp), maxHp: b.maxHp, leaving: b.leaving, kind: b.bossKind } : null,
+      boss: b ? { hp: Math.max(0, b.hp), maxHp: b.maxHp, leaving: b.leaving, kind: b.bossKind, shield: b.shield > 0, enraged: b.enraged } : null,
       fireReady: p.fireCooldown <= 0,
       jetpack: p.jetpack,
       rockets: p.rockets,

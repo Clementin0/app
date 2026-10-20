@@ -52,6 +52,9 @@ const SFX_FOR_EVENT = {
   turbo: 'turbo',
   ramp: 'launch',
   rocket: 'rocket',
+  bossShield: 'shield',
+  bossShieldDown: 'shieldBreak',
+  bossEnraged: 'alarm',
 };
 
 /**
@@ -411,6 +414,14 @@ export class GameScene extends Phaser.Scene {
     this.hud.update(this.world.hud());
   }
 
+  /** The first time an attack shows up in a run, a short hint on how to dodge it. */
+  _hintOnce(kind) {
+    this.hints ??= new Set();
+    if (this.hints.has(kind)) return;
+    this.hints.add(kind);
+    this.hud.showMessage(t(`hint_${kind}`), kind === 'quake' ? COLORS.orange : 0xff3860, 1300, 40);
+  }
+
   _showZoneTitle(index, delay) {
     const theme = zoneTheme(index);
     this.time.delayedCall(delay, () => this.hud.showMessage(t('zone', { n: index + 1 }), theme.line, 1500, 56, t(theme.nameKey)));
@@ -525,6 +536,21 @@ export class GameScene extends Phaser.Scene {
         break;
       case 'meteorImpact':
         if (e.hit) haptics.medium();
+        break;
+      case 'bossShield':
+        haptics.medium();
+        this.hud.showMessage(t('bossShield'), 0x7ff3ff, 1100, 50, t('bossShieldDesc'));
+        break;
+      case 'bossEnraged':
+        haptics.heavy();
+        this.hud.showMessage(t('bossEnraged'), 0xff1f3d, 1300, 54, t('bossEnragedDesc'));
+        break;
+      case 'bossWave':
+        sfx.play(e.kind === 'quake' ? 'quake' : 'laser');
+        this._hintOnce(e.kind);
+        break;
+      case 'enemyShot':
+        if (e.heavy) this._hintOnce('heavy');
         break;
       case 'bossFled':
         music.setIntensity(1);

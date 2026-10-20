@@ -1,10 +1,10 @@
-import { AdditiveBlending, ConeGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, RingGeometry, SphereGeometry, TorusGeometry, Vector3 } from 'three';
+import { AdditiveBlending, ConeGeometry, DoubleSide, Group, IcosahedronGeometry, LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, RingGeometry, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, Vector3, WireframeGeometry } from 'three';
 import { DEFAULT_EQUIPPED, getItem } from '../config/cosmetics.js';
 import { laneX } from '../config/game3d.config.js';
 import { animateCharacter, buildCharacter } from './Character.js';
-import { buildEntity, enemyShot, flash, playerShot, poolKey, RAMP_COLOR, rocketShot, TURBO_COLOR } from './models.js';
+import { buildEntity, enemyShot, flash, heavyShot, laserWave, playerShot, poolKey, quakeWave, RAMP_COLOR, rocketShot, TURBO_COLOR } from './models.js';
 import { Particles } from './Particles.js';
-import { chevronTexture } from './textures3d.js';
+import { chevronTexture, dotTexture } from './textures3d.js';
 
 const JET_FLAME = [0xff8a3d, 0xffd23f];
 const DRAW_DISTANCE = 100; // ~75% into the fog (Environment: 30..125 m)
@@ -83,6 +83,19 @@ export class GameView {
     this.stormOn = false;
     this.lightningTimer = 3;
     this.rocketMeshes = new Map();
+    this.heavyMeshes = new Map();
+    this.waveMeshes = new Map();
+    // Boss shield (hex bubble) and rage aura.
+    const shieldGeo = new IcosahedronGeometry(1, 2);
+    this.bossShield = new Group();
+    this.bossShield.add(
+      new Mesh(shieldGeo, new MeshBasicMaterial({ color: 0x7ff3ff, transparent: true, opacity: 0.16, depthWrite: false, blending: AdditiveBlending })),
+      new LineSegments(new WireframeGeometry(shieldGeo), new LineBasicMaterial({ color: 0x7ff3ff, transparent: true, opacity: 0.7 })),
+    );
+    this.bossShield.visible = false;
+    this.rageAura = new Sprite(new SpriteMaterial({ map: dotTexture(), color: 0xff1f3d, transparent: true, depthWrite: false, blending: AdditiveBlending, opacity: 0.8 }));
+    this.rageAura.visible = false;
+    this.root.add(this.bossShield, this.rageAura);
     this.camPos = new Vector3(0, 4.2, -7.4);
     this.camLook = new Vector3(0, 1.3, 12);
     this.tmp = new Vector3();
@@ -221,7 +234,7 @@ export class GameView {
           ps.burst(X(e.x), e.y, e.z, [0xff8a3d, 0xffffff], 10, 4, 0.35);
           break;
         case 'shotBlocked':
-          ps.burst(X(e.x), e.y, e.z, [this.weaponColor], 5, 3, 0.25);
+          ps.burst(X(e.x), e.y, e.z, e.boss ? [0x7ff3ff, 0xffffff] : [this.weaponColor], 5, 3, 0.25);
           break;
         case 'jump':
         case 'land':
@@ -248,6 +261,25 @@ export class GameView {
           break;
         case 'bossSpawn':
           if (this.effects) this.stage.pulse('boss');
+          break;
+        case 'bossShield':
+          ps.burst(X(e.x), e.y, e.z, [0x7ff3ff, 0xffffff], 40, 9, 0.7);
+          this.ring(X(e.x), e.y, e.z - 1, 0x7ff3ff, 9, 0.5);
+          this.addShake(0.3);
+          break;
+        case 'bossShieldDown':
+          ps.burst(X(e.x), e.y, e.z, [0x7ff3ff, 0xffffff], 50, 11, 0.8);
+          break;
+        case 'bossEnraged':
+          if (this.effects) this.stage.pulse('hurt');
+          ps.burst(X(e.x), e.y, e.z, [0xff1f3d, 0xff8a3d, 0xffffff], 60, 10, 0.9);
+          this.addShake(0.5);
+          break;
+        case 'bossWave':
+          if (e.kind === 'quake') {
+            this.addShake(0.35);
+            ps.burst(0, 0.3, e.z, [0xff7a1a, 0xffd23f], 40, 8, 0.6, { up: 3 });
+          }
           break;
         case 'bossDrop':
           // Mines fall from the boss's belly.
@@ -453,10 +485,29 @@ export class GameView {
         cube.rotation.set(this.time * 1.3, this.time * 1.7, 0);
       }
       for (let i = 0; i < lights.length; i++) lights[i].visible = Math.floor(this.time * 6 + i) % 2 === 0;
+      // Shield bubble and rage aura around it.
+      const by = this.bossMesh.position.y + b.h * 0.7;
+      this.bossShield.visible = b.shield > 0;
+      if (b.shield > 0) {
+        this.bossShield.position.set(X(b.x), by, b.z);
+        this.bossShield.scale.set(5.2, 3.2, 3.6).multiplyScalar(1 + Math.sin(this.time * 9) * 0.02);
+        this.bossShield.rotation.y += dt * 0.6;
+        // Flickers in its last second.
+        this.bossShield.visible = b.shield > 1 || Math.floor(this.time * 14) % 2 === 0;
+      }
+      this.rageAura.visible = b.enraged;
+      if (b.enraged) {
+        this.rageAura.position.set(X(b.x), by, b.z + 0.5);
+        this.rageAura.scale.setScalar(11 + Math.sin(this.time * 8) * 1.5);
+      }
     } else if (this.bossMesh) {
       flash(this.bossMesh, false);
       this._release(this.bossMesh);
       this.bossMesh = null;
+    }
+    if (!w.boss) {
+      this.bossShield.visible = false;
+      this.rageAura.visible = false;
     }
   }
 
@@ -534,7 +585,37 @@ export class GameView {
     const stamp = this.frameStamp;
     this._syncShotList(w.shots, this.shotMeshes, this.shotKey, this.makeShot, stamp, (s) => !s.rocket);
     this._syncShotList(w.shots, this.rocketMeshes, 'rocket', rocketShot, stamp, (s) => s.rocket);
-    this._syncShotList(w.eshots, this.eshotMeshes, 'eshot', enemyShot, stamp);
+    this._syncShotList(w.eshots, this.eshotMeshes, 'eshot', enemyShot, stamp, (s) => !s.heavy);
+    this._syncShotList(w.eshots, this.heavyMeshes, 'eshotHeavy', heavyShot, stamp, (s) => s.heavy);
+    this._syncWaves(stamp);
+  }
+
+  /** Boss quakes and lasers; a charging laser glows at the boss first. */
+  _syncWaves(stamp) {
+    const w = this.world;
+    for (const wv of w.waves) {
+      let obj = this.waveMeshes.get(wv.id);
+      if (!obj) {
+        obj = this._acquire(`wave_${wv.kind}`, wv.kind === 'quake' ? quakeWave : laserWave);
+        this.waveMeshes.set(wv.id, obj);
+      }
+      obj.userData.stamp = stamp;
+      obj.position.set(0, 0, wv.z);
+      if (wv.kind === 'laser') {
+        const charging = wv.charge > 0;
+        const pulse = charging ? 0.25 + 0.75 * (1 - wv.charge / w.cfg.BOSS.laser.charge) : 1;
+        obj.userData.beam.scale.set(1, charging ? 0.4 + Math.random() * 0.3 : 1, charging ? 0.4 : 1);
+        obj.userData.outer.material.opacity = 0.55 * pulse;
+      } else {
+        obj.userData.wall.scale.y = 0.85 + Math.random() * 0.3;
+      }
+    }
+    for (const [id, obj] of this.waveMeshes) {
+      if (obj.userData.stamp !== stamp) {
+        this._release(obj);
+        this.waveMeshes.delete(id);
+      }
+    }
   }
 
   _syncShotList(list, map, key, make, stamp, filter) {
@@ -548,7 +629,10 @@ export class GameView {
       obj.userData.stamp = stamp;
       obj.position.set(X(s.x), s.y, s.z);
       obj.rotation.y = s.vx ? Math.atan2(-s.vx, s.speed) : 0;
-      if (s.rocket) {
+      if (s.heavy) {
+        obj.userData.ring.rotation.z += 0.12;
+        obj.userData.spikes.rotation.z -= 0.08;
+      } else if (s.rocket) {
         // Nose along the flight; a smoke trail behind.
         obj.rotation.x = -Math.atan2(s.vy, s.speed);
         obj.userData.flame.scale.setScalar(0.7 + Math.random() * 0.5);
@@ -611,10 +695,15 @@ export class GameView {
     this.stage.environment.setStorm(0);
     this.particles.dispose();
     this.stage.scene.remove(this.root);
+    this.rageAura.material.dispose();
     for (const m of this.rings) m.material.dispose();
     this.rings[0].geometry.dispose();
     this.root.traverse((o) => {
       if (o.isMesh && (o === this.shieldBubble || o === this.magnetRing || o === this.turboAura)) {
+        o.geometry.dispose();
+        o.material.dispose();
+      }
+      if (o.parent === this.bossShield) {
         o.geometry.dispose();
         o.material.dispose();
       }

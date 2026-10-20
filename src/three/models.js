@@ -629,6 +629,72 @@ export function rocketShot() {
   return g;
 }
 
+/** Heavy plasma: a dark core in a red shell and a spiked ring. Shots cannot stop it. */
+export function heavyShot() {
+  const g = new Group();
+  const r = GAME3D.BOSS.heavy.radius;
+  const core = new Mesh(G('heavyCore', () => new SphereGeometry(r * 0.7, 14, 10)), basic(0x1a0008));
+  const shell = new Mesh(G('heavyShell', () => new SphereGeometry(r, 16, 12)), basic(0xff1f3d, { transparent: true, opacity: 0.45, blending: AdditiveBlending, depthWrite: false }));
+  const ring = new Mesh(G('heavyRing', () => new TorusGeometry(r * 1.25, 0.06, 6, 24)), basic(0xff6a7f));
+  const spikes = new Group();
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const spike = new Mesh(G('heavySpike', () => new ConeGeometry(0.08, 0.32, 6)), basic(0xffb3c1));
+    spike.position.set(Math.cos(a) * r * 1.25, Math.sin(a) * r * 1.25, 0);
+    spike.rotation.z = a - Math.PI / 2;
+    spikes.add(spike);
+  }
+  const halo = glow(0xff1f3d, 2.6);
+  g.add(halo, shell, core, ring, spikes);
+  g.userData = { ring, spikes };
+  return g;
+}
+
+/** Boss quake: a burning wall of energy rolling along the road (jump it). */
+export function quakeWave() {
+  const g = new Group();
+  const width = GAME3D.LANES.count * GAME3D.LANES.width + 0.8;
+  const { y1 } = GAME3D.BOSS.quake;
+  const wall = new Mesh(box(width, y1, 0.35), basic(0xff7a1a, { transparent: true, opacity: 0.6, blending: AdditiveBlending, depthWrite: false }));
+  wall.position.y = y1 / 2;
+  const crest = new Mesh(box(width, 0.07, 0.1), basic(0xfff1c2));
+  crest.position.y = y1;
+  const ground = new Mesh(box(width, 0.04, 1.6), basic(0xff3d00, { transparent: true, opacity: 0.5, blending: AdditiveBlending, depthWrite: false }));
+  ground.position.set(0, 0.03, 0.6);
+  g.add(ground, wall, crest);
+  for (const x of [-width / 2, 0, width / 2]) {
+    const flare = glow(0xff8a3d, 1.6);
+    flare.position.set(x, y1 * 0.7, 0);
+    g.add(flare);
+  }
+  g.userData = { wall };
+  return g;
+}
+
+/** Boss laser: a chest-high red beam across the road (slide under it). */
+export function laserWave() {
+  const g = new Group();
+  const width = GAME3D.LANES.count * GAME3D.LANES.width + 1.2;
+  const { y0, y1 } = GAME3D.BOSS.laser;
+  const beam = new Group();
+  beam.position.y = (y0 + y1) / 2;
+  const core = new Mesh(G('laserCore', () => new CylinderGeometry(0.06, 0.06, 1, 8)), basic(0xffe6ea));
+  core.rotation.z = Math.PI / 2;
+  core.scale.y = width;
+  const outer = new Mesh(G('laserOuter', () => new CylinderGeometry(0.22, 0.22, 1, 10)), basic(0xff1f3d, { transparent: true, opacity: 0.55, blending: AdditiveBlending, depthWrite: false }));
+  outer.rotation.z = Math.PI / 2;
+  outer.scale.y = width;
+  beam.add(outer, core);
+  for (const x of [-width / 2, width / 2]) {
+    const emitter = glow(0xff3860, 1.4);
+    emitter.position.x = x;
+    beam.add(emitter);
+  }
+  g.add(beam);
+  g.userData = { beam, outer };
+  return g;
+}
+
 export function enemyShot() {
   const g = new Group();
   const core = new Mesh(G('plasma', () => new SphereGeometry(GAME3D.BULLETS.enemyRadius, 12, 10)), basic(0xffe0d0));

@@ -127,7 +127,8 @@ export class Autopilot3D {
       }
     }
     for (const s of w.eshots) {
-      if (Math.abs(s.x - laneX(lane)) < 0.9 && s.z < 18 && s.z > -0.5) score -= 120;
+      // Heavy plasma cannot be shot down or slid under: get out of its lane.
+      if (Math.abs(s.x - laneX(lane)) < 0.9 && s.z < (s.heavy ? 26 : 18) && s.z > -0.5) score -= s.heavy ? 700 : 120;
     }
     return score;
   }
@@ -197,7 +198,14 @@ export class Autopilot3D {
       if (Math.abs(xAt - p.x) < e.w / 2 + 1.2) w.jump();
     }
     for (const s of w.eshots) {
-      if (Math.abs(s.x - p.x) < 0.8 && s.z > 0 && s.z < 7 && p.grounded && p.slide <= 0.1) w.slide();
+      if (!s.heavy && Math.abs(s.x - p.x) < 0.8 && s.z > 0 && s.z < 7 && p.grounded && p.slide <= 0.1) w.slide();
+    }
+    // Boss waves: jump the quake, slide under the laser, just before they arrive.
+    for (const wv of w.waves ?? []) {
+      if (wv.charge > 0 || wv.hit || wv.z < 0) continue;
+      const arrive = (wv.z - 0.45) / wv.speed;
+      if (wv.kind === 'quake' && p.grounded && arrive < 0.16) w.jump();
+      else if (wv.kind === 'laser' && arrive < 0.22 && p.slide <= 0.15) w.slide();
     }
 
     // 3. Shoot whatever is in front of us.

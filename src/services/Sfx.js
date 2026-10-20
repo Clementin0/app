@@ -64,6 +64,15 @@ const SOUNDS = {
     { type: 'square', from: 220, to: 880, dur: 0.22, vol: 0.1 },
     { type: 'triangle', from: 880, to: 1320, dur: 0.18, vol: 0.08, delay: 0.12 },
   ],
+  shield: [
+    { type: 'triangle', from: 600, to: 1400, dur: 0.3, vol: 0.09 },
+    { type: 'sine', from: 1400, to: 900, dur: 0.3, vol: 0.06, delay: 0.15 },
+  ],
+  quake: [
+    { type: 'noise', dur: 0.5, vol: 0.22 },
+    { type: 'sawtooth', from: 90, to: 40, dur: 0.5, vol: 0.14 },
+  ],
+  laser: [{ type: 'sawtooth', from: 200, to: 1600, dur: 0.6, vol: 0.06 }],
   rocket: [
     { type: 'noise', dur: 0.16, vol: 0.07 },
     { type: 'sine', from: 500, to: 1400, dur: 0.16, vol: 0.05 },

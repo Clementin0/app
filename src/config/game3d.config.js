@@ -87,6 +87,38 @@ export const BOSS = Object.freeze({
   attackEvery: 1.7,
   attackSpeedup: 0.1, // per zone
   timeLimit: 45,
+  // Shield phases: at these fractions of its health the boss shields itself
+  // (shots bounce off) and fires a fast barrage that has to be dodged.
+  shieldAt: [0.5],
+  shieldAtLate: [2 / 3, 1 / 3], // from zone 3, and in the boss rush
+  shieldTime: 4.5,
+  shieldAttackEvery: 1.05,
+  // Attacks shots cannot stop: heavy plasma (change lane), ground quake
+  // (jump), sweeping laser (slide under it).
+  heavy: { speed: 14, radius: 0.55, y: 1.0 },
+  quake: { speed: 16, y0: 0, y1: 0.55 },
+  laser: { speed: 18, y0: 0.95, y1: 1.5, charge: 0.7 },
+  combosFrom: 3, // zone from which attacks can come in pairs
+  comboChance: 0.45,
+});
+
+/**
+ * Boss rush: every boss is tougher than the last, its health follows the
+ * firepower gained from perks (so holding fire is never enough), it never
+ * flees but gets enraged, and attacks come in pairs from the third boss.
+ */
+export const BOSS_RUSH = Object.freeze({
+  hpBase: 40,
+  hpPerBoss: 24,
+  dpsExponent: 0.8, // health x (firepower / starting firepower)^0.8
+  attackEvery: 1.55,
+  attackSpeedup: 0.09, // per boss
+  minAttackEvery: 0.7,
+  enrageAfter: 35, // seconds
+  enrageSpeed: 0.6, // attack interval multiplier once enraged
+  combosFrom: 2, // boss index
+  comboChance: 0.6,
+  noPerks: ['vampire', 'coins', 'lucky', 'magnet'], // useless or endless healing between bosses
 });
 
 /**
@@ -95,13 +127,19 @@ export const BOSS = Object.freeze({
  * sweep: shots lane after lane / mines: mines on 1-2 lanes / drones: 2 drones.
  */
 export const BOSS_KINDS = Object.freeze([
-  { id: 'mothership', nameKey: 'bossMothership', patterns: ['volley', 'burst', 'volley'], hull: 0x2b2347, ring: 0xff2bd6, dome: 0x7ff3ff, core: 0xff2bd6 },
-  { id: 'scorpion', nameKey: 'bossScorpion', patterns: ['mines', 'volley', 'burst', 'mines', 'volley'], hull: 0x3d2410, ring: 0xff8a3d, dome: 0xffd23f, core: 0xff6a00 },
-  { id: 'carrier', nameKey: 'bossCarrier', patterns: ['drones', 'sweep', 'volley', 'burst'], hull: 0x173452, ring: 0x7ff3ff, dome: 0xe0f8ff, core: 0x3fd0ff },
-  { id: 'overlord', nameKey: 'bossOverlord', patterns: ['sweep', 'mines', 'burst', 'drones', 'volley'], hull: 0x3a0d14, ring: 0xff3860, dome: 0xffb3c1, core: 0xff2b2b },
-  { id: 'kraken', nameKey: 'bossKraken', patterns: ['sweep', 'mines', 'volley', 'sweep', 'burst'], hull: 0x0c3a3a, ring: 0x39ffd2, dome: 0xb8fff0, core: 0x00ffa8 },
-  { id: 'core', nameKey: 'bossCore', patterns: ['meteors', 'drones', 'sweep', 'burst', 'mines', 'volley'], hull: 0x1e1440, ring: 0xd6c8ff, dome: 0xffffff, core: 0x9d4dff },
+  { id: 'mothership', nameKey: 'bossMothership', patterns: ['volley', 'burst', 'heavy', 'volley', 'burst'], hull: 0x2b2347, ring: 0xff2bd6, dome: 0x7ff3ff, core: 0xff2bd6 },
+  { id: 'scorpion', nameKey: 'bossScorpion', patterns: ['mines', 'volley', 'quake', 'burst', 'mines', 'heavy'], hull: 0x3d2410, ring: 0xff8a3d, dome: 0xffd23f, core: 0xff6a00 },
+  { id: 'carrier', nameKey: 'bossCarrier', patterns: ['drones', 'sweep', 'laser', 'volley', 'heavy', 'burst'], hull: 0x173452, ring: 0x7ff3ff, dome: 0xe0f8ff, core: 0x3fd0ff },
+  { id: 'overlord', nameKey: 'bossOverlord', patterns: ['sweep', 'quake', 'mines', 'heavy', 'drones', 'laser', 'volley'], hull: 0x3a0d14, ring: 0xff3860, dome: 0xffb3c1, core: 0xff2b2b },
+  { id: 'kraken', nameKey: 'bossKraken', patterns: ['sweep', 'laser', 'mines', 'heavy', 'volley', 'quake', 'burst'], hull: 0x0c3a3a, ring: 0x39ffd2, dome: 0xb8fff0, core: 0x00ffa8 },
+  { id: 'core', nameKey: 'bossCore', patterns: ['meteors', 'laser', 'drones', 'quake', 'sweep', 'heavy', 'mines', 'volley'], hull: 0x1e1440, ring: 0xd6c8ff, dome: 0xffffff, core: 0x9d4dff },
 ]);
+
+/** Shield barrage: only attacks that have to be dodged. */
+export const SHIELD_PATTERNS = Object.freeze(['heavy', 'quake', 'laser', 'heavy', 'quake']);
+
+/** Second attack fired together with the first (from combosFrom): always a fair pair. */
+export const BOSS_COMBOS = Object.freeze({ volley: 'quake', burst: 'quake', sweep: 'quake', heavy: 'quake', mines: 'laser', drones: 'heavy', laser: 'heavy' });
 
 export const bossKind = (zoneIndex) => BOSS_KINDS[zoneIndex % BOSS_KINDS.length];
 
@@ -159,4 +197,4 @@ export const POWERUPS = Object.freeze({
   spawnEvery: [14, 24],
 });
 
-export const GAME3D = Object.freeze({ LANES, PLAYER, SPEED, WORLD, WEAPONS_STATS, BULLETS, ENEMIES, OBSTACLES, BOSS, BOSS_KINDS, ZONES, EVENTS, METEOR, JETPACK, TURBO, RAMP, ROCKETS, SCORE, POWERUPS });
+export const GAME3D = Object.freeze({ LANES, PLAYER, SPEED, WORLD, WEAPONS_STATS, BULLETS, ENEMIES, OBSTACLES, BOSS, BOSS_RUSH, BOSS_KINDS, SHIELD_PATTERNS, BOSS_COMBOS, ZONES, EVENTS, METEOR, JETPACK, TURBO, RAMP, ROCKETS, SCORE, POWERUPS });

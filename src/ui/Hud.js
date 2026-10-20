@@ -254,9 +254,13 @@ export class Hud {
     if (state.boss) {
       const b = this.bossRect;
       const ratio = state.boss.hp / state.boss.maxHp;
+      // Shielded: cyan frame; enraged: a red pulsing bar.
+      const pulse = 0.65 + 0.35 * Math.sin(this.scene.time.now / 90);
+      const fill = state.boss.enraged ? 0xff1f3d : this.bossColor ?? COLORS.pink;
       this.bossPanel.fillStyle(COLORS.ink, 0.75).fillRoundedRect(b.x, b.y, b.w, 18, 9);
-      this.bossPanel.fillStyle(this.bossColor ?? COLORS.pink, 1).fillRoundedRect(b.x + 2, b.y + 2, Math.max(8, (b.w - 4) * ratio), 14, 7);
-      this.bossPanel.lineStyle(2, COLORS.white, 0.6).strokeRoundedRect(b.x, b.y, b.w, 18, 9);
+      this.bossPanel.fillStyle(fill, state.boss.enraged ? pulse : 1).fillRoundedRect(b.x + 2, b.y + 2, Math.max(8, (b.w - 4) * ratio), 14, 7);
+      if (state.boss.shield) this.bossPanel.lineStyle(4, 0x7ff3ff, pulse).strokeRoundedRect(b.x - 3, b.y - 3, b.w + 6, 24, 12);
+      else this.bossPanel.lineStyle(2, COLORS.white, 0.6).strokeRoundedRect(b.x, b.y, b.w, 18, 9);
     }
   }
 
