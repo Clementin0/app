@@ -297,6 +297,53 @@ export const PATTERNS3D = [
     },
   },
   {
+    // Laser fences blinking on two lanes, coins through them; the third lane is clear.
+    key: 'laserFences',
+    minLevel: 2,
+    weight: () => 1.3,
+    build: ({ rng }) => {
+      const [a, b, free] = shuffledLanes(rng);
+      return {
+        length: 1,
+        items: [{ type: 'fence', lane: a, dz: 0 }, { type: 'fence', lane: b, dz: 0 }, ...coinLine(a, -2, 3), ...coinLine(free, -4, 4)],
+      };
+    },
+  },
+  {
+    // Fences on all three lanes, out of step: at any time one of them is off.
+    key: 'fenceGauntlet',
+    minLevel: 5,
+    weight: () => 0.8,
+    build: ({ rng }) => {
+      const { on, off } = GAME3D.OBSTACLES.fence;
+      const period = on + off;
+      const base = rng.next() * period;
+      const items = shuffledLanes(rng).map((lane, i) => ({ type: 'fence', lane, dz: 0, phase: base + (i * period) / 3 }));
+      return { length: 1, items: [...items, { type: 'gem', lane: rng.int(0, 2), dz: 0, y: 1.2 }] };
+    },
+  },
+  {
+    // A sniper hanging far ahead, behind a crate: shoot it or keep moving.
+    key: 'sniperNest',
+    minLevel: 3,
+    weight: () => 1.2,
+    allowed: ({ drones }) => drones < 2,
+    build: ({ rng }) => {
+      const [a, b, c] = shuffledLanes(rng);
+      return { length: 4, items: [{ type: 'sniper', lane: a, dz: 4 }, { type: 'crate', lane: b, dz: 0 }, ...coinLine(c, 0, 5)] };
+    },
+  },
+  {
+    // A shielded guard marching down its lane, a barrier next to it.
+    key: 'guardPost',
+    minLevel: 3,
+    weight: () => 1.2,
+    build: ({ rng }) => {
+      const [a, b, c] = shuffledLanes(rng);
+      return { length: 2, items: [{ type: 'guard', lane: a, dz: 2 }, { type: 'barrier', lane: b, dz: 0 }, ...coinArc(b, 0, 20), ...coinLine(c, -2, 4)] };
+    },
+  },
+  {
     key: 'ambush',
     minLevel: 4,
     weight: () => 1.3,
@@ -343,7 +390,7 @@ export class LaneSpawner {
     this.count += 1;
     // Flying enemies of the last few rows (they hover ~6-10 s): a cap that
     // depends only on the course, not on what the player shot down.
-    const flyers = built.items.filter((i) => i.type === 'drone' || i.type === 'bomber').length;
+    const flyers = built.items.filter((i) => i.type === 'drone' || i.type === 'bomber' || i.type === 'sniper').length;
     this.recentFlyers.push(flyers);
     if (this.recentFlyers.length > FLYER_WINDOW) this.recentFlyers.shift();
     const gap = this.gapRange(speed, level);

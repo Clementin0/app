@@ -15,6 +15,7 @@ import {
   MeshLambertMaterial,
   Object3D,
   PlaneGeometry,
+  SpotLight,
   Sprite,
   SpriteMaterial,
   SRGBColorSpace,
@@ -73,7 +74,14 @@ export class Environment {
     this.hemi = new HemisphereLight(0xb9a6ff, 0x1a0838, 1.6);
     this.sunLight = new DirectionalLight(0xffffff, 1.2);
     this.sunLight.position.set(-4, 10, -6);
-    scene.add(this.hemi, this.sunLight);
+    // The runner's headlight (blackout). Always in the scene, off by default,
+    // so the light count never changes (no shader recompiles mid-run).
+    this.headlight = new SpotLight(0xfff1d0, 0, 70, 0.42, 0.65, 1.1);
+    this.headlight.position.set(0, 2.4, -0.5);
+    this.headlight.target.position.set(0, 0, 20);
+    scene.add(this.hemi, this.sunLight, this.headlight, this.headlight.target);
+    this.blackout = 0;
+    this.black = new Color(0x030008);
 
     // Road and side ground.
     this.roadMat = new MeshLambertMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.35 });
@@ -289,10 +297,31 @@ export class Environment {
   setStorm(k) {
     this.storm = k;
     this.weather.setIntensity(1 + k * 2.5);
-    // The sun and the horizon fade behind the storm.
-    this.sunMat.opacity = 1 - k * 0.75;
-    this.haloMat.opacity = 0.35 * (1 - k * 0.6);
-    this.mountainWire.opacity = 0.8 * (1 - k * 0.7);
+    this._applyHaze();
+  }
+
+  /** Blackout event: lights out, only neon, the headlight and close fog (0 = normal). */
+  setBlackout(k) {
+    this.blackout = k;
+    this._applyHaze();
+    this.headlight.intensity = k * 45;
+    this.roadMat.emissiveIntensity = 0.35 * (1 - 0.45 * k);
+    this.scene.backgroundIntensity = 1 - 0.85 * k;
+    this.sideMat.color.setScalar(1 - 0.55 * k);
+  }
+
+  /** The headlight follows the runner. */
+  aimHeadlight(x, y) {
+    this.headlight.position.set(x, y + 2.4, -0.5);
+    this.headlight.target.position.set(x * 0.8, 0, 20);
+  }
+
+  /** Sun, halo and horizon fade behind a storm or a blackout. */
+  _applyHaze() {
+    const k = Math.max(this.storm, this.blackout * 1.2);
+    this.sunMat.opacity = Math.max(0.04, 1 - k * 0.8);
+    this.haloMat.opacity = 0.35 * Math.max(0, 1 - k * 0.75);
+    this.mountainWire.opacity = 0.8 * Math.max(0.08, 1 - k * 0.8);
   }
 
   /** A lightning flash: the sky, fog and lights blink white. */
@@ -306,19 +335,22 @@ export class Environment {
       this.fogBase.lerpColors(this.fogFrom, this.fogTo, this.transition);
     }
     const storm = this.storm;
+    const dark = this.blackout;
     const fog = this.scene.fog.color.copy(this.fogBase);
     if (storm > 0) fog.lerp(this.stormColor, storm * 0.6);
+    if (dark > 0) fog.lerp(this.black, dark * 0.9);
+    let flash = 0;
     if (this.flashK > 0) {
       // Two quick blinks, like real lightning.
       this.flashK = Math.max(0, this.flashK - dt * 3);
-      const k = this.flashK * (this.flashK > 0.55 && this.flashK < 0.7 ? 0.3 : 1);
-      fog.lerp(this.white, k * 0.55);
-      this.hemi.intensity = 1.6 + k * 3;
-      this.sunLight.intensity = 1.2 + k * 2;
+      flash = this.flashK * (this.flashK > 0.55 && this.flashK < 0.7 ? 0.3 : 1);
+      fog.lerp(this.white, flash * 0.55);
     }
-    // Fog closes in during a storm.
-    this.scene.fog.near = 30 - storm * 22;
-    this.scene.fog.far = 125 - storm * 70;
+    this.hemi.intensity = (1.6 + flash * 3) * (1 - 0.72 * dark);
+    this.sunLight.intensity = (1.2 + flash * 2) * (1 - 0.85 * dark);
+    // Fog closes in during a storm or a blackout.
+    this.scene.fog.near = Math.max(6, 30 - storm * 22 - dark * 16);
+    this.scene.fog.far = Math.max(50, 125 - storm * 70 - dark * 62);
 
     const dz = speed * dt;
     if (dz > 0) {

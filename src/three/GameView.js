@@ -1,4 +1,4 @@
-import { AdditiveBlending, ConeGeometry, DoubleSide, Group, IcosahedronGeometry, LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, RingGeometry, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, Vector3, WireframeGeometry } from 'three';
+import { AdditiveBlending, BoxGeometry, ConeGeometry, DoubleSide, Group, IcosahedronGeometry, LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, RingGeometry, SphereGeometry, Sprite, SpriteMaterial, TorusGeometry, Vector3, WireframeGeometry } from 'three';
 import { DEFAULT_EQUIPPED, getItem } from '../config/cosmetics.js';
 import { laneX } from '../config/game3d.config.js';
 import { animateCharacter, buildCharacter } from './Character.js';
@@ -96,6 +96,15 @@ export class GameView {
     this.rageAura = new Sprite(new SpriteMaterial({ map: dotTexture(), color: 0xff1f3d, transparent: true, depthWrite: false, blending: AdditiveBlending, opacity: 0.8 }));
     this.rageAura.visible = false;
     this.root.add(this.bossShield, this.rageAura);
+    // Sniper sights (thin red lines down the aimed lane) and beam flashes.
+    this.sightMat = new MeshBasicMaterial({ color: 0xff2244, transparent: true, opacity: 0.7, depthWrite: false, blending: AdditiveBlending });
+    this.beamMat = new MeshBasicMaterial({ color: 0xffd0d8, transparent: true, opacity: 0, depthWrite: false, blending: AdditiveBlending });
+    this.sightGeo = new BoxGeometry(0.06, 0.06, 1);
+    this.sights = new Map();
+    this.beams = [];
+    this.blackoutK = 0;
+    this.blackoutOn = false;
+    this.overdriveK = 0;
     this.camPos = new Vector3(0, 4.2, -7.4);
     this.camLook = new Vector3(0, 1.3, 12);
     this.tmp = new Vector3();
@@ -116,6 +125,9 @@ export class GameView {
     this.stormOn = false;
     this.stormK = 0;
     this.stage.environment.setStorm(0);
+    this.blackoutOn = false;
+    this.blackoutK = 0;
+    this.stage.environment.setBlackout(0);
   }
 
   /** Expanding shockwave ring on the ground (or in the air) at a view position. */
@@ -275,6 +287,30 @@ export class GameView {
           ps.burst(X(e.x), e.y, e.z, [0xff1f3d, 0xff8a3d, 0xffffff], 60, 10, 0.9);
           this.addShake(0.5);
           break;
+        case 'nearMiss':
+          ps.burst(X(e.x), 1, Math.max(-0.5, e.z), [0x7ff3ff, 0xffffff], 10, 4, 0.3, { drift: -6 });
+          break;
+        case 'overdrive':
+          if (this.effects) this.stage.pulse('overdrive');
+          this.ring(px, 0.2, 0.5, 0xff8ef0, 7, 0.6);
+          ps.burst(px, 1, 0.3, [0xff8ef0, 0xb07cff, 0xffffff], 50, 9, 0.8);
+          break;
+        case 'fenceZap':
+          ps.burst(X(e.x), 1.2, e.z, [0xff2244, 0xffffff], 24, 6, 0.4);
+          break;
+        case 'guardShieldBreak':
+          ps.burst(X(e.x), e.y, e.z - 0.8, [0x39d0ff, 0xffffff], 30, 7, 0.6);
+          this.ring(X(e.x), e.y - 0.6, e.z - 0.8, 0x39d0ff, 2.5, 0.3);
+          break;
+        case 'sniperShot': {
+          const beam = this.beams.find((b) => !b.visible) ?? this._makeBeam();
+          beam.visible = true;
+          beam.userData.t = 0;
+          beam.position.set(X(e.x), 1.2, e.z / 2);
+          beam.scale.set(1, 1, Math.max(1, e.z + 2));
+          if (e.hit) ps.burst(px, 1.2, 0.2, [0xff2244, 0xffffff], 20, 6, 0.4);
+          break;
+        }
         case 'bossWave':
           if (e.kind === 'quake') {
             this.addShake(0.35);
@@ -320,15 +356,59 @@ export class GameView {
         case 'eventStart':
           this.addShake(0.15);
           if (e.event === 'storm') this.stormOn = true;
+          if (e.event === 'blackout') this.blackoutOn = true;
           break;
         case 'eventEnd':
           if (e.event === 'storm') this.stormOn = false;
+          if (e.event === 'blackout') this.blackoutOn = false;
           break;
         default:
           break;
       }
     }
     return events;
+  }
+
+  _makeBeam() {
+    const beam = new Mesh(this.sightGeo, this.beamMat.clone());
+    beam.scale.set(4, 4, 1);
+    beam.visible = false;
+    beam.userData = { t: 1 };
+    this.root.add(beam);
+    this.beams.push(beam);
+    return beam;
+  }
+
+  /** Red sights of aiming snipers, sniper beam flashes. */
+  _updateSights(dt, stamp) {
+    for (const e of this.world.entities) {
+      if (e.type !== 'sniper' || e.dead || e.state !== 'aim') continue;
+      let sight = this.sights.get(e.id);
+      if (!sight) {
+        sight = new Mesh(this.sightGeo, this.sightMat);
+        this.root.add(sight);
+        this.sights.set(e.id, sight);
+      }
+      sight.userData.stamp = stamp;
+      const x = X(laneX(e.aimLane));
+      // From the sniper down to just behind the player, at chest height.
+      const z0 = -2;
+      sight.position.set(x, 1.15, (e.z + z0) / 2);
+      sight.scale.set(1 + Math.sin(this.time * 40) * 0.3, 1, e.z - z0);
+    }
+    for (const [id, sight] of this.sights) {
+      if (sight.userData.stamp !== stamp) {
+        this.root.remove(sight);
+        this.sights.delete(id);
+      }
+    }
+    for (const b of this.beams) {
+      if (!b.visible) continue;
+      b.userData.t += dt / 0.25;
+      b.material.opacity = Math.max(0, 1 - b.userData.t);
+      b.scale.x = b.scale.y = 4 * (1 - b.userData.t * 0.6);
+      if (b.userData.t >= 1) b.visible = false;
+    }
   }
 
   /** Projects a world point (logic coordinates) to normalized screen coordinates (0..1, y down). */
@@ -354,6 +434,7 @@ export class GameView {
 
     this._syncEntities(dt);
     this._syncShots();
+    this._updateSights(dt, this.frameStamp);
 
     // Player.
     const c = this.character;
@@ -414,6 +495,17 @@ export class GameView {
         this.stage.pulse('flash');
       }
     }
+    // Overdrive look (screen tint, heavier trail) and blackout (dark world, headlight).
+    const odGoal = p.overdrive > 0 && w.state !== 'dead' ? 1 : 0;
+    this.overdriveK += (odGoal - this.overdriveK) * Math.min(1, dt * 6);
+    this.stage.overdrive = this.effects ? this.overdriveK : 0;
+    const blackGoal = this.blackoutOn && w.state !== 'dead' ? 1 : 0;
+    if (Math.abs(blackGoal - this.blackoutK) > 0.001) {
+      this.blackoutK += Math.max(-dt / 1.5, Math.min(dt / 1.5, blackGoal - this.blackoutK));
+      env.setBlackout(this.blackoutK, this.character.position.x);
+    }
+    if (this.blackoutK > 0.05) env.aimHeadlight(X(p.x), p.y);
+
     // Pads: the chevrons flow forward.
     const flow = (this.time * 1.6) % 1;
     chevronTexture(TURBO_COLOR).offset.y = -flow;
@@ -555,6 +647,32 @@ export class GameView {
       case 'slider':
         for (const l of obj.userData.lights) l.visible = Math.floor(t * 6) % 2 === 0;
         break;
+      case 'fence': {
+        // On: the curtain hums; the last instants before switching it flickers.
+        const { on, off } = this.world.cfg.OBSTACLES.fence;
+        const ph = (this.world.time + e.phase) % (on + off);
+        const flicker = (e.on && ph > on - 0.18) || (!e.on && ph > on + off - 0.18);
+        obj.userData.curtain.visible = e.on ? !flicker || Math.floor(this.time * 30) % 2 === 0 : flicker && Math.floor(this.time * 30) % 2 === 0;
+        obj.userData.curtain.scale.y = 1 + Math.sin(this.time * 40) * 0.01;
+        break;
+      }
+      case 'sniper':
+        obj.position.y += Math.sin(t * 2.5) * 0.12;
+        obj.userData.eyeGlow.scale.setScalar(e.state === 'aim' ? 1.8 + Math.sin(this.time * 30) * 0.5 : 1.2);
+        obj.rotation.z = Math.sin(t * 1.3) * 0.1;
+        break;
+      case 'guard': {
+        const swing = Math.sin(t * 7) * 0.45;
+        obj.userData.legs[0].rotation.x = swing;
+        obj.userData.legs[1].rotation.x = -swing;
+        obj.userData.shield.visible = e.shieldHp > 0;
+        obj.userData.shield.rotation.z = t * 0.8;
+        break;
+      }
+      case 'car':
+        obj.position.y += 0.15 + Math.sin(t * 6) * 0.05;
+        obj.rotation.z = Math.sin(t * 3) * 0.03;
+        break;
       case 'meteor': {
         // The fireball falls as the fuse burns; the ring pulses faster and faster.
         const u = obj.userData;
@@ -693,6 +811,14 @@ export class GameView {
     }
     this.stage.environment.boost = 0;
     this.stage.environment.setStorm(0);
+    this.stage.environment.setBlackout(0);
+    this.stage.overdrive = 0;
+    for (const sight of this.sights.values()) this.root.remove(sight);
+    this.sightMat.dispose();
+    this.sightGeo.dispose();
+    for (const b of this.beams) b.material.dispose();
+    this.beamMat.dispose();
+
     this.particles.dispose();
     this.stage.scene.remove(this.root);
     this.rageAura.material.dispose();

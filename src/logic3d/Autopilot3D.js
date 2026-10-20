@@ -1,6 +1,6 @@
 import { laneX } from '../config/game3d.config.js';
 
-const TARGETS = new Set(['walker', 'crate', 'drone', 'mine', 'charger', 'turret', 'bomber']);
+const TARGETS = new Set(['walker', 'crate', 'drone', 'mine', 'charger', 'turret', 'bomber', 'sniper', 'guard', 'car']);
 const JUMP_OVER = new Set(['barrier', 'mine', 'gap', 'slider']);
 
 /**
@@ -20,7 +20,17 @@ export class Autopilot3D {
 
   _killTime(e) {
     const w = this.world.weaponStats;
-    return (e.hp / w.damage) * w.interval + 0.15;
+    return ((e.hp + (e.shieldHp > 0 ? e.shieldHp : 0)) / w.damage) * w.interval + 0.15;
+  }
+
+  /** Is a laser fence on at any moment while we would be going through it? */
+  _fenceOnWhilePassing(e, front) {
+    const w = this.world;
+    const { on, off } = w.cfg.OBSTACLES.fence;
+    const t0 = w.time + Math.max(0, front - 0.45) / w.speed;
+    const t1 = w.time + (front + e.d + 0.45) / w.speed;
+    for (let t = t0; t <= t1 + 1e-6; t += 0.02) if ((t + e.phase) % (on + off) < on) return true;
+    return false;
   }
 
   /** A pad still ahead that we can reach in this lane (not too late to switch into it), or one we are on. */
@@ -58,8 +68,14 @@ export class Autopilot3D {
       if (e.dead || !this._inLane(e, lane)) continue;
       const front = e.z - e.d / 2;
       const back = e.z + e.d / 2;
-      if (back < -0.6 || front > horizon) continue;
+      if (back < -0.6 || (front > horizon && e.type !== 'car')) continue;
       const d = Math.max(0.1, front);
+      if (e.type === 'car') {
+        // Cars rush in: look further ahead for them.
+        const arrive = d / (w.speed + w.cfg.ENEMIES.car.speed);
+        if (front < (w.speed + w.cfg.ENEMIES.car.speed) * 1.4) score += this._killTime(e) < arrive * 0.6 ? 5 : -700;
+        continue;
+      }
       if (e.kind !== 'pickup' && e.kind !== 'pad' && safe.some(([a, b]) => e.z > a && e.z < b)) {
         score += 4; // smash it for points
         continue;
@@ -96,6 +112,17 @@ export class Autopilot3D {
           // It lands where we will be: never stay under a marker.
           score -= 900;
           break;
+        case 'fence':
+          score += this._fenceOnWhilePassing(e, front) ? -300 : 2;
+          break;
+        case 'sniper':
+          score -= 10;
+          break;
+        case 'guard': {
+          const arrive = d / (w.speed + w.cfg.ENEMIES.guard.walk);
+          score += this._killTime(e) < arrive * 0.7 ? 6 : -160;
+          break;
+        }
         case 'charger':
           if (e.state === 'charge') {
             score -= 600;
@@ -126,6 +153,8 @@ export class Autopilot3D {
           if (e.kind === 'pickup') score += 25;
       }
     }
+    // A sniper's sight is on this lane: it will fire down it (from far away, from any lane).
+    for (const e of w.entities) if (e.type === 'sniper' && !e.dead && e.state === 'aim' && e.aimLane === lane) score -= 900;
     for (const s of w.eshots) {
       // Heavy plasma cannot be shot down or slid under: get out of its lane.
       if (Math.abs(s.x - laneX(lane)) < 0.9 && s.z < (s.heavy ? 26 : 18) && s.z > -0.5) score -= s.heavy ? 700 : 120;
@@ -206,6 +235,12 @@ export class Autopilot3D {
       const arrive = (wv.z - 0.45) / wv.speed;
       if (wv.kind === 'quake' && p.grounded && arrive < 0.16) w.jump();
       else if (wv.kind === 'laser' && arrive < 0.22 && p.slide <= 0.15) w.slide();
+    }
+
+    // Overdrive when it pays: a boss, or a crowd ahead.
+    if (p.od >= 1 && p.overdrive <= 0) {
+      const crowd = w.entities.filter((e) => !e.dead && e.kind === 'enemy' && e.z > 0 && e.z < 45).length;
+      if (w.boss || crowd >= 3) w.activateOverdrive();
     }
 
     // 3. Shoot whatever is in front of us.

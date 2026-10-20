@@ -480,6 +480,116 @@ function mine() {
   return g;
 }
 
+// ------------------------------------------------------------ v5 threats
+
+/** Laser fence: two pylons and a curtain of red light that blinks on and off. */
+function fence() {
+  const { w, h } = GAME3D.OBSTACLES.fence;
+  const g = new Group();
+  const postGeo = box(0.22, h, 0.3);
+  const postMat = lambert(0x221a33, 0x0a0614);
+  const caps = [];
+  for (const x of [-w / 2, w / 2]) {
+    const post = new Mesh(postGeo, postMat);
+    post.position.set(x, h / 2, 0);
+    const cap = glow(0xff2244, 1.1);
+    cap.position.set(x, h + 0.1, 0);
+    caps.push(cap);
+    g.add(post, cap);
+  }
+  const curtain = new Group();
+  const sheet = new Mesh(G('fenceSheet', () => new PlaneGeometry(w - 0.2, h - 0.2)), basic(0xff2244, { transparent: true, opacity: 0.28, blending: AdditiveBlending, depthWrite: false, side: DoubleSide }));
+  sheet.position.y = h / 2;
+  curtain.add(sheet);
+  for (let i = 0; i < 6; i++) {
+    const beamLine = new Mesh(box(w - 0.2, 0.05, 0.05), basic(0xff8a9a));
+    beamLine.position.y = 0.25 + (i * (h - 0.5)) / 5;
+    curtain.add(beamLine);
+  }
+  // Off: a faint dotted outline so the gap still reads.
+  const ghost = new Mesh(box(w - 0.2, 0.04, 0.04), basic(0x5a2a3a));
+  ghost.position.y = 0.06;
+  g.add(curtain, ghost);
+  g.userData = { curtain, caps };
+  return g;
+}
+
+/** Sniper: a hovering eye with a long barrel. */
+function sniper() {
+  const g = new Group();
+  const body = new Mesh(G('sniperBody', () => new OctahedronGeometry(0.55, 0)), lambert(0x2a1f3c, 0x14061f));
+  body.scale.set(1, 0.7, 1.3);
+  body.position.y = 0.5;
+  const barrel = new Mesh(G('sniperBarrel', () => new CylinderGeometry(0.06, 0.09, 1.4, 8)), lambert(0x15121f, 0x220010));
+  barrel.rotation.x = Math.PI / 2;
+  barrel.position.set(0, 0.42, -0.9);
+  const eye = new Mesh(G('sniperEye', () => new SphereGeometry(0.16, 10, 8)), basic(0xff2244));
+  eye.position.set(0, 0.6, -0.5);
+  const eyeGlow = glow(0xff2244, 1.4);
+  eyeGlow.position.set(0, 0.6, -0.6);
+  const fins = new Mesh(box(1.5, 0.05, 0.3), basic(0xb81ec4));
+  fins.position.set(0, 0.5, 0.25);
+  g.add(body, barrel, eye, eyeGlow, fins);
+  g.userData = { eyeGlow, flash: [body] };
+  return g;
+}
+
+/** Guard: a heavy walker behind a hexagonal energy shield. */
+function guard() {
+  const g = new Group();
+  const bodyMat = lambert(0x2f3a55, 0x0a1220);
+  const body = new Mesh(box(1.2, 1.0, 0.8), bodyMat);
+  body.position.y = 1.25;
+  const head = new Mesh(box(0.75, 0.42, 0.65), bodyMat);
+  head.position.y = 1.95;
+  const visor = new Mesh(box(0.55, 0.12, 0.05), basic(0x39d0ff));
+  visor.position.set(0, 1.95, -0.34);
+  const legGeo = box(0.32, 0.8, 0.36);
+  const legs = [-0.3, 0.3].map((x) => {
+    const pivot = new Group();
+    pivot.position.set(x, 0.8, 0);
+    const leg = new Mesh(legGeo, lambert(0x1e2638, 0x050a12));
+    leg.position.y = -0.4;
+    pivot.add(leg);
+    return pivot;
+  });
+  const shield = new Group();
+  shield.position.set(0, 1.1, -0.75);
+  const hex = new Mesh(G('guardHex', () => new CylinderGeometry(0.95, 0.95, 0.06, 6)), basic(0x39d0ff, { transparent: true, opacity: 0.35, blending: AdditiveBlending, depthWrite: false }));
+  hex.rotation.x = Math.PI / 2;
+  hex.scale.set(1, 1, 1.25);
+  const rim = new Mesh(G('guardRim', () => new TorusGeometry(0.95, 0.05, 4, 6)), basic(0x9fe8ff));
+  rim.scale.set(1, 1.25, 1);
+  shield.add(hex, rim);
+  g.add(body, head, visor, ...legs, shield);
+  g.userData = { legs, shield, flash: [body, head] };
+  return g;
+}
+
+/** Hover car (traffic): body, glass, neon underglow, headlights in front (-z). */
+function car() {
+  const { w, h, d } = GAME3D.ENEMIES.car;
+  const g = new Group();
+  const palette = [0xff2bd6, 0x00f5ff, 0xffd23f, 0x39ff88];
+  const color = palette[(Math.random() * palette.length) | 0];
+  const body = new Mesh(box(w, h * 0.45, d), lambert(0x1c1830, 0x080512));
+  body.position.y = 0.55;
+  const cabin = new Mesh(box(w * 0.7, h * 0.35, d * 0.45), basic(0x7ff3ff, { transparent: true, opacity: 0.45 }));
+  cabin.position.set(0, 0.95, 0.15);
+  const stripe = new Mesh(box(w + 0.02, 0.06, d + 0.02), basic(color));
+  stripe.position.y = 0.6;
+  const under = new Mesh(box(w * 0.9, 0.04, d * 0.9), basic(color, { transparent: true, opacity: 0.6, blending: AdditiveBlending, depthWrite: false }));
+  under.position.y = 0.22;
+  const lights = [-w * 0.32, w * 0.32].map((x) => {
+    const l = glow(0xfff6d8, 1.3);
+    l.position.set(x, 0.6, -d / 2 - 0.05);
+    return l;
+  });
+  g.add(body, cabin, stripe, under, ...lights);
+  g.userData = { lights, flash: [body], bob: false };
+  return g;
+}
+
 // ------------------------------------------------------------------ pads
 
 /** Chevrons lying flat (or on a slope), pointing the way forward (+z). */
@@ -742,6 +852,14 @@ export function buildEntity(e, theme) {
       return coin();
     case 'gem':
       return gem();
+    case 'fence':
+      return fence();
+    case 'sniper':
+      return sniper();
+    case 'guard':
+      return guard();
+    case 'car':
+      return car();
     case 'turbo':
       return turboPad();
     case 'ramp':

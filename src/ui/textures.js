@@ -540,6 +540,62 @@ function drawIcons(scene) {
     ctx.lineTo(54, 32);
     ctx.stroke();
   });
+  icon('icon_overdrive', (ctx) => {
+    // Lightning bolt.
+    ctx.beginPath();
+    ctx.moveTo(38, 4);
+    ctx.lineTo(14, 36);
+    ctx.lineTo(30, 36);
+    ctx.lineTo(24, 60);
+    ctx.lineTo(50, 26);
+    ctx.lineTo(34, 26);
+    ctx.closePath();
+    ctx.fill();
+  });
+  icon('icon_star', (ctx) => {
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 ? 11 : 27;
+      const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+      ctx.lineTo(32 + Math.cos(a) * r, 34 + Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fill();
+  });
+  icon('icon_clock', (ctx) => {
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(32, 34, 23, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(32, 34);
+    ctx.lineTo(32, 19);
+    ctx.moveTo(32, 34);
+    ctx.lineTo(43, 40);
+    ctx.stroke();
+    roundRect(ctx, 26, 2, 12, 7, 2);
+    ctx.fill();
+  });
+  icon('icon_map', (ctx) => {
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(6, 14);
+    ctx.lineTo(22, 8);
+    ctx.lineTo(42, 16);
+    ctx.lineTo(58, 10);
+    ctx.lineTo(58, 50);
+    ctx.lineTo(42, 56);
+    ctx.lineTo(22, 48);
+    ctx.lineTo(6, 54);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(22, 8);
+    ctx.lineTo(22, 48);
+    ctx.moveTo(42, 16);
+    ctx.lineTo(42, 56);
+    ctx.stroke();
+  });
   icon('icon_lock', (ctx) => {
     ctx.lineWidth = 7;
     ctx.beginPath();

@@ -68,6 +68,20 @@ const SOUNDS = {
     { type: 'triangle', from: 600, to: 1400, dur: 0.3, vol: 0.09 },
     { type: 'sine', from: 1400, to: 900, dur: 0.3, vol: 0.06, delay: 0.15 },
   ],
+  overdrive: [
+    { type: 'sawtooth', from: 900, to: 120, dur: 0.6, vol: 0.1 },
+    { type: 'sine', from: 220, to: 880, dur: 0.5, vol: 0.08, delay: 0.25 },
+  ],
+  whoosh: [{ type: 'noise', dur: 0.14, vol: 0.09 }],
+  lock: [
+    { type: 'square', from: 1200, to: 1200, dur: 0.05, vol: 0.05 },
+    { type: 'square', from: 1200, to: 1200, dur: 0.05, vol: 0.05, delay: 0.12 },
+    { type: 'square', from: 1600, to: 1600, dur: 0.08, vol: 0.06, delay: 0.24 },
+  ],
+  horn: [
+    { type: 'square', from: 330, to: 330, dur: 0.18, vol: 0.05 },
+    { type: 'square', from: 262, to: 262, dur: 0.22, vol: 0.05, delay: 0.2 },
+  ],
   quake: [
     { type: 'noise', dur: 0.5, vol: 0.22 },
     { type: 'sawtooth', from: 90, to: 40, dur: 0.5, vol: 0.14 },

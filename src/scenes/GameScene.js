@@ -17,7 +17,7 @@ import { bindLayout } from '../ui/layout.js';
 import { COLORS } from '../ui/theme.js';
 
 const SWIPE = 42; // game pixels
-const EVENT_COLORS = { goldRush: 0xffd23f, meteors: 0xff6a00, ambush: 0xff3860, storm: 0x9fb4ff, lowGravity: 0xd6a8ff };
+const EVENT_COLORS = { goldRush: 0xffd23f, meteors: 0xff6a00, ambush: 0xff3860, storm: 0x9fb4ff, lowGravity: 0xd6a8ff, traffic: 0xffd23f, blackout: 0xb07cff };
 const HOLD_TO_FIRE = 0.2; // seconds
 const COUNTDOWN = 3;
 
@@ -53,6 +53,14 @@ const SFX_FOR_EVENT = {
   ramp: 'launch',
   rocket: 'rocket',
   bossShield: 'shield',
+  overdrive: 'overdrive',
+  overdriveReady: 'powerup',
+  nearMiss: 'whoosh',
+  sniperAim: 'lock',
+  sniperShot: 'laser',
+  fenceZap: 'hurt',
+  guardShieldBreak: 'shieldBreak',
+  carIncoming: 'horn',
   bossShieldDown: 'shieldBreak',
   bossEnraged: 'alarm',
 };
@@ -111,7 +119,7 @@ export class GameScene extends Phaser.Scene {
 
     this.world = new LaneWorld({ rng, best: this.startBest, loadout: loadoutFrom(snap), mode: this.mode, modifiers, courseSeed });
     this.view = stage.setView(new GameView(stage, this.world, { equipped: snap.equipped }));
-    this.hud = new Hud(this, { onPause: () => this.pauseGame(), onSkipTutorial: () => this.tutorial?.finish() });
+    this.hud = new Hud(this, { onPause: () => this.pauseGame(), onSkipTutorial: () => this.tutorial?.finish(), onOverdrive: () => this.triggerOverdrive() });
 
     music.setZone(0);
     music.start(1);
@@ -170,6 +178,7 @@ export class GameScene extends Phaser.Scene {
       kb.on(`keydown-${k}`, () => this.world.setFiring(true));
       kb.on(`keyup-${k}`, () => this.world.setFiring(false));
     }
+    on(['E', 'SHIFT'], () => this.triggerOverdrive());
     kb.on('keydown-P', () => this.pauseGame());
     kb.on('keydown-ESC', () => this.pauseGame());
   }
@@ -204,6 +213,11 @@ export class GameScene extends Phaser.Scene {
         this.world.setFiring(true);
       }
     }
+  }
+
+  triggerOverdrive() {
+    if (this.phase !== 'running') return;
+    this.world.activateOverdrive();
   }
 
   // ---------------------------------------------------------- lifecycle
@@ -411,7 +425,19 @@ export class GameScene extends Phaser.Scene {
       this.perkDelay -= delta / 1000; // real time, whatever the frame rate
       if (this.perkDelay <= 0) this._offerPerks();
     }
+    this._hintThreats(delta / 1000);
     this.hud.update(this.world.hud());
+  }
+
+  /** First fence / guard of the run coming up: say how to deal with it. */
+  _hintThreats(dt) {
+    this.hintScan = (this.hintScan ?? 0) - dt;
+    if (this.hintScan > 0 || this.phase !== 'running') return;
+    this.hintScan = 0.4;
+    for (const type of ['fence', 'guard']) {
+      if (this.hints?.has(type)) continue;
+      if (this.world.entities.some((e) => e.type === type && !e.dead && e.z < 45)) this._hintOnce(type);
+    }
   }
 
   /** The first time an attack shows up in a run, a short hint on how to dodge it. */
@@ -530,6 +556,29 @@ export class GameScene extends Phaser.Scene {
       case 'turbo':
         haptics.medium();
         this.hud.showMessage(t('turbo'), COLORS.cyan, 800, 58);
+        break;
+      case 'overdrive':
+        haptics.heavy();
+        this.hud.showMessage(t('overdrive'), 0xff8ef0, 900, 60, t('overdriveDesc'));
+        music.setIntensity(2);
+        break;
+      case 'overdriveEnd':
+        music.setIntensity(this.world.boss ? 2 : 1);
+        break;
+      case 'overdriveReady':
+        haptics.light();
+        this.hud.showMessage(t('overdriveReady'), COLORS.yellow, 800, 36);
+        break;
+      case 'nearMiss': {
+        const pt = this.view.screenPoint(e.x, e.y + 0.8, Math.max(0.5, e.z + 2), this.popupPoint);
+        if (pt.visible) this.hud.popup(pt.x, pt.y, `${t('nearMiss')} +${e.points}`, '#7ff3ff', 26);
+        break;
+      }
+      case 'guardShieldBreak':
+        haptics.light();
+        break;
+      case 'sniperAim':
+        this._hintOnce('sniper');
         break;
       case 'ramp':
         haptics.light();

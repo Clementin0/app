@@ -32,6 +32,7 @@ export class Stage {
     this.camera.position.set(0, 4, -7);
     this.view = null;
     this.pulses = { tint: 0, aberration: 0, tintColor: [1, 0.15, 0.3] };
+    this.overdrive = 0; // 0..1, set by the game view
     this._createRenderer();
     this.environment = new Environment(this.scene, this.quality);
     this.resize();
@@ -105,6 +106,10 @@ export class Stage {
     } else if (kind === 'flash') {
       p.tint = 0.4;
       p.tintColor = [0.85, 0.9, 1];
+    } else if (kind === 'overdrive') {
+      p.tint = 0.8;
+      p.aberration = 0.01;
+      p.tintColor = [1, 0.35, 0.95];
     }
   }
 
@@ -157,8 +162,11 @@ export class Stage {
     p.tint = Math.max(0, p.tint - step * 2.2);
     p.aberration = Math.max(0, p.aberration - step * 0.03);
     const u = this.grade.uniforms;
-    u.tintAmount.value = p.tint;
-    u.tint.value = p.tintColor;
+    // Overdrive keeps magenta edges and richer colors while it runs.
+    const od = this.overdrive;
+    u.tintAmount.value = Math.max(p.tint, od * 0.4);
+    u.tint.value = p.tint > od * 0.4 ? p.tintColor : [1, 0.35, 0.95];
+    u.saturation.value = 1.12 + od * 0.35;
     // Turbo keeps a light aberration on, for the sense of speed.
     u.aberration.value = 0.0015 + p.aberration + this.environment.boost * 0.0025;
     this.composer.render(step);

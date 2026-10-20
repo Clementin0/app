@@ -17,9 +17,11 @@ export const DEFAULT_LOADOUT = Object.freeze({
 
 const SOLID_OBSTACLES = new Set(['barrier', 'beam', 'wall', 'platform']);
 // Shots fly over these (low obstacles, holes, meteor markers, pads on the road).
-const SHOTS_PASS = new Set(['barrier', 'slider', 'gap', 'meteor', 'turbo', 'ramp']);
+const SHOTS_PASS = new Set(['barrier', 'slider', 'gap', 'meteor', 'turbo', 'ramp', 'fence']);
 // Enemies that hurt on contact (and break).
-const CONTACT_ENEMIES = new Set(['walker', 'crate', 'mine', 'charger', 'turret']);
+const CONTACT_ENEMIES = new Set(['walker', 'crate', 'mine', 'charger', 'turret', 'guard', 'car']);
+// Things worth a "near miss" when they pass in the lane you just left.
+const NEAR_MISS_TYPES = new Set(['wall', 'barrier', 'beam', 'slider', 'platform', 'fence', 'crate', 'walker', 'charger', 'turret', 'mine', 'guard', 'car']);
 
 /**
  * Optional rules of a run (daily challenge, boss rush): speed and score
@@ -63,10 +65,11 @@ export class LaneWorld {
   get weaponStats() {
     const base = this.cfg.WEAPONS_STATS[this.loadout.weapon] ?? this.cfg.WEAPONS_STATS.blaster;
     const perk = (id) => this.perks?.[id] ?? 0;
+    const od = this.player?.overdrive > 0 ? this.cfg.OVERDRIVE : null;
     return {
       ...base,
-      damage: base.damage * (1 + 0.35 * this.loadout.damageLevel) * (1 + PERK_TUNING.damagePerLevel * perk('damage')),
-      interval: base.interval * Math.pow(0.9, this.loadout.fireRateLevel) * Math.pow(PERK_TUNING.fireRatePerLevel, perk('fireRate')),
+      damage: base.damage * (1 + 0.35 * this.loadout.damageLevel) * (1 + PERK_TUNING.damagePerLevel * perk('damage')) * (od?.damage ?? 1),
+      interval: base.interval * Math.pow(0.9, this.loadout.fireRateLevel) * Math.pow(PERK_TUNING.fireRatePerLevel, perk('fireRate')) * (od?.fireRate ?? 1),
       pierce: !!base.pierce || perk('pierce') > 0,
       multishot: perk('multishot') > 0,
     };
@@ -141,12 +144,16 @@ export class LaneWorld {
       rocketSide: 1,
       rampId: null, // the ramp under the runner
       floaty: false, // airborne since a low gravity jump
+      od: 0, // overdrive meter, 0..1
+      overdrive: 0, // real seconds of overdrive left
+      fromLane: 1, // lane left by the last lane change (near misses)
+      laneChangedAt: -9,
     };
     this.combo = { count: 0, timer: 0, best: 0 };
     // Tutorial hooks: no random rows, and nothing can hurt the player.
     this.spawnPaused = false;
     this.safe = false;
-    this.stats = { kills: 0, drones: 0, walkers: 0, crates: 0, chargers: 0, turrets: 0, bombers: 0, bosses: 0, jumps: 0, slides: 0, shots: 0, events: 0, perks: 0, killsSinceHeal: 0, turbos: 0, ramps: 0, smashed: 0 };
+    this.stats = { kills: 0, drones: 0, walkers: 0, crates: 0, chargers: 0, turrets: 0, bombers: 0, bosses: 0, jumps: 0, slides: 0, shots: 0, events: 0, perks: 0, killsSinceHeal: 0, turbos: 0, ramps: 0, smashed: 0, nearMisses: 0, overdrives: 0, snipers: 0, guards: 0, cars: 0 };
     this.spawner.reset();
     // First rows appear ~50 m ahead, so the action starts within seconds.
     this.distanceToNext = 50 - this.cfg.WORLD.spawnZ;
@@ -203,6 +210,8 @@ export class LaneWorld {
       this._emit('bump', { dir });
       return false;
     }
+    p.fromLane = p.lane;
+    p.laneChangedAt = this.time;
     p.lane = target;
     this._emit('laneChange', { dir, lane: target });
     return true;
@@ -265,9 +274,16 @@ export class LaneWorld {
 
   step(dt) {
     if (this.state !== 'running') return;
-    const delta = Math.min(dt, this.cfg.WORLD.maxStep);
-    if (!(delta > 0)) return;
-    const { SPEED } = this.cfg;
+    const real = Math.min(dt, this.cfg.WORLD.maxStep);
+    if (!(real > 0)) return;
+    // Overdrive: bullet time. The world slows down, the overdrive runs in real time.
+    const p0 = this.player;
+    let delta = real;
+    if (p0.overdrive > 0) {
+      p0.overdrive = Math.max(0, p0.overdrive - real);
+      delta = real * this.cfg.OVERDRIVE.timeScale;
+      if (p0.overdrive === 0) this._emit('overdriveEnd', {});
+    }
 
     this.time += delta;
     const turbo = 1 + (this.cfg.TURBO.speed - 1) * this.player.turboK;
@@ -314,8 +330,31 @@ export class LaneWorld {
 
   /** Score multiplier of the run (daily modifiers, storm event). */
   get scoreMult() {
-    const storm = this.event?.type === 'storm' ? this.cfg.EVENTS.storm.score : 1;
-    return this.modifiers.score * storm;
+    const ev = this.event?.type;
+    const event = ev === 'storm' || ev === 'blackout' ? this.cfg.EVENTS[ev].score : 1;
+    const od = this.player?.overdrive > 0 ? this.cfg.OVERDRIVE.score : 1;
+    return this.modifiers.score * event * od;
+  }
+
+  // ---------------------------------------------------------- overdrive
+
+  /** Adds to the overdrive meter (not while it runs). */
+  _gainOverdrive(amount) {
+    const p = this.player;
+    if (p.overdrive > 0 || p.od >= 1) return;
+    p.od = Math.min(1, p.od + amount);
+    if (p.od >= 1) this._emit('overdriveReady', {});
+  }
+
+  /** Triggers the overdrive when the meter is full. */
+  activateOverdrive() {
+    const p = this.player;
+    if (this.state !== 'running' || p.od < 1 || p.overdrive > 0) return false;
+    p.od = 0;
+    p.overdrive = this.cfg.OVERDRIVE.duration;
+    this.stats.overdrives += 1;
+    this._emit('overdrive', { duration: p.overdrive });
+    return true;
   }
 
   /**
@@ -393,8 +432,11 @@ export class LaneWorld {
   _startEvent(type) {
     const cfg = this.cfg.EVENTS[type];
     // Low gravity waits for the rows already on the road (laid out for normal jumps).
-    const delay = type === 'lowGravity' ? this.cfg.WORLD.spawnZ / Math.max(1, this.courseSpeed) : 0;
-    this.event = { type, t: 0, delay, duration: cfg.duration + delay, waves: 0, waveTimer: 1.2, spawned: [], nextMeteor: 0.5 };
+    const z = this.cfg.WORLD.spawnZ;
+    const v = Math.max(1, this.courseSpeed);
+    // Traffic: the first car must not meet the rows already on the road.
+    const delay = type === 'lowGravity' ? z / v : type === 'traffic' ? z / v - z / (v + this.cfg.ENEMIES.car.speed) + 0.5 : 0;
+    this.event = { type, t: 0, delay, duration: cfg.duration + delay, waves: 0, waveTimer: 1.2, spawned: [], nextMeteor: 0.5, nextCar: delay };
     this.lastEvent = type;
     this._emit('eventStart', { event: type, duration: cfg.duration });
   }
@@ -409,6 +451,18 @@ export class LaneWorld {
       if (ev.nextMeteor <= 0 && ev.t < cfg.duration - cfg.fuse) {
         this._spawnMeteor(this.rng.chance(0.55) ? this.player.lane : this.rng.int(0, this.cfg.LANES.count - 1));
         ev.nextMeteor = cfg.every;
+      }
+    } else if (ev.type === 'traffic') {
+      ev.nextCar -= dt;
+      if (ev.nextCar <= 0 && ev.t < ev.duration - 2) {
+        // One lane, sometimes two: never all three.
+        const lanes = [0, 1, 2];
+        const first = lanes.splice(this.rng.int(0, 2), 1)[0];
+        const cars = [first];
+        if (this.rng.chance(cfg.double)) cars.push(this.rng.pick(lanes));
+        for (const lane of cars) this._addEntity({ type: 'car', lane, dz: 0 }, this.cfg.WORLD.spawnZ);
+        this._emit('carIncoming', { lanes: cars });
+        ev.nextCar = this.rng.range(...cfg.every);
       }
     } else if (ev.type === 'ambush') {
       if (ev.waves < cfg.waves) {
@@ -531,6 +585,7 @@ export class LaneWorld {
       this.score.addCoin(40);
       this.score.addGem(3);
       this._emit('bossDefeated', { x: b.x, y: b.y + b.h / 2, z: b.z, coins: 40, gems: 3 });
+      this._gainOverdrive(this.cfg.OVERDRIVE.gain.boss);
     } else {
       this._emit('bossFled', {});
     }
@@ -732,11 +787,13 @@ export class LaneWorld {
     const { POWERUPS, WORLD } = this.cfg;
     for (const e of this.entities) {
       // Hovering drones / bombers and a winding-up ram keep pace with the player.
-      if ((e.type === 'drone' || e.type === 'bomber') && e.state !== 'approach') continue;
+      if ((e.type === 'drone' || e.type === 'bomber' || e.type === 'sniper') && e.state !== 'approach') continue;
       if (e.type === 'charger' && e.state === 'windup') continue;
-      if (e.type === 'charger') e.prevZ = e.z; // for the swept collision below
+      if (e.type === 'charger' || e.type === 'car') e.prevZ = e.z; // for the swept collision below
       e.z -= dz;
       if (e.type === 'walker') e.z -= this.cfg.ENEMIES.walker.walk * dt;
+      else if (e.type === 'guard') e.z -= this.cfg.ENEMIES.guard.walk * dt;
+      else if (e.type === 'car') e.z -= this.cfg.ENEMIES.car.speed * dt;
       else if (e.type === 'charger' && e.state === 'charge') e.z -= this.cfg.ENEMIES.charger.charge * dt;
     }
     if (this.spawnPaused) return;
@@ -746,7 +803,7 @@ export class LaneWorld {
     while (this.distanceToNext <= 0) {
       const z0 = WORLD.spawnZ + this.distanceToNext;
       const ev = this.event?.type;
-      const quiet = bossPhase || this.zone.cooldown > 0 || ev === 'ambush' || ev === 'meteors' || this.mode === 'bossRush';
+      const quiet = bossPhase || this.zone.cooldown > 0 || ev === 'ambush' || ev === 'meteors' || ev === 'traffic' || this.mode === 'bossRush';
       // Rows are laid out for the course speed: one spawned in turbo is
       // reached after it, at the normal speed.
       const speed = this.courseSpeed;
@@ -764,7 +821,7 @@ export class LaneWorld {
         this.nextPowerupAt = this.courseTime + this.courseRng.range(...POWERUPS.spawnEvery) * (this.perks.lucky ? PERK_TUNING.luckyEvery : 1);
       }
       // In a storm the fog is close: rows come a bit further apart.
-      this.distanceToNext += pattern.length + pattern.gapAfter * (ev === 'storm' ? this.cfg.EVENTS.storm.gap : 1);
+      this.distanceToNext += pattern.length + pattern.gapAfter * (ev === 'storm' || ev === 'blackout' ? this.cfg.EVENTS[ev].gap : 1);
     }
   }
 
@@ -841,6 +898,28 @@ export class LaneWorld {
           targetLane: item.lane,
           phase: this.rng.next() * 6,
         };
+        break;
+      }
+      case 'fence': {
+        const s = OBSTACLES.fence;
+        e = { ...base, kind: 'obstacle', y: 0, w: s.w, h: s.h, d: s.d, on: true, zapped: false, phase: item.phase ?? this.rng.next() * (s.on + s.off) };
+        break;
+      }
+      case 'sniper': {
+        const s = ENEMIES.sniper;
+        const hp = s.hp + Math.floor(this.zone.index / 2);
+        e = { ...base, kind: 'enemy', y: s.y, w: s.w, h: s.h, d: s.d, hp, maxHp: hp, state: 'approach', holdZ: this.rng.range(...s.holdZ), timer: 0, shotsLeft: s.shots, aimLane: item.lane, phase: this.rng.next() * 6 };
+        break;
+      }
+      case 'guard': {
+        const s = ENEMIES.guard;
+        const hp = s.hp + Math.floor(this.zone.index / 2);
+        e = { ...base, kind: 'enemy', y: 0, w: s.w, h: s.h, d: s.d, hp, maxHp: hp, shieldHp: s.shield + this.zone.index, phase: this.rng.next() * 6 };
+        break;
+      }
+      case 'car': {
+        const s = ENEMIES.car;
+        e = { ...base, kind: 'enemy', y: 0, w: s.w, h: s.h, d: s.d, hp: s.hp, maxHp: s.hp, phase: this.rng.next() * 6 };
         break;
       }
       case 'slider': {
@@ -1025,6 +1104,7 @@ export class LaneWorld {
     const points = Math.round(this.cfg.TURBO.smashPoints * (this.player.double > 0 ? 2 : 1) * this.scoreMult);
     this.score.addBonus(points);
     this.stats.smashed += 1;
+    this._gainOverdrive(this.cfg.OVERDRIVE.gain.smash);
     this._emit('smash', { id: e.id, enemy: e.type, x: e.x, y: e.y + e.h / 2, z: e.z, turbo: true, points });
   }
 
@@ -1150,6 +1230,11 @@ export class LaneWorld {
         }
       } else if (e.type === 'bomber') {
         this._updateBomber(e, dt);
+      } else if (e.type === 'sniper') {
+        this._updateSniper(e, dt);
+      } else if (e.type === 'fence') {
+        const f = this.cfg.OBSTACLES.fence;
+        e.on = (this.time + e.phase) % (f.on + f.off) < f.on;
       } else if (e.type === 'charger') {
         if (e.state === 'approach' && e.z <= e.windupZ) {
           e.state = 'windup';
@@ -1211,6 +1296,49 @@ export class LaneWorld {
     }
   }
 
+  /**
+   * Sniper: holds far ahead, locks the player's lane with a red sight, then
+   * fires a beam down that lane. A few shots, then it flies away.
+   */
+  _updateSniper(e, dt) {
+    const s = this.cfg.ENEMIES.sniper;
+    if (e.state === 'approach' && e.z <= e.holdZ) {
+      e.state = 'cool';
+      e.timer = 0.4;
+    }
+    if (e.state === 'cool') {
+      e.timer -= dt;
+      if (e.timer <= 0) {
+        if (e.shotsLeft <= 0) {
+          e.state = 'leave';
+          return;
+        }
+        e.state = 'aim';
+        e.timer = s.aim;
+        e.aimLane = this.player.lane;
+        this._emit('sniperAim', { id: e.id, lane: e.aimLane, x: e.x, y: e.y, z: e.z, duration: s.aim });
+      }
+    } else if (e.state === 'aim') {
+      // It slides over to keep the sight steady from above the lane.
+      const tx = laneX(e.aimLane);
+      e.x += Math.max(-4 * dt, Math.min(4 * dt, tx - e.x));
+      e.timer -= dt;
+      if (e.timer <= 0) {
+        const p = this.player;
+        const hit = Math.abs(p.x - tx) < (this.cfg.LANES.width + this.cfg.PLAYER.width) / 2 - 0.55;
+        e.shotsLeft -= 1;
+        e.state = 'cool';
+        e.timer = s.cool;
+        this._emit('sniperShot', { id: e.id, lane: e.aimLane, x: tx, y: e.y, z: e.z, hit });
+        if (hit) this._damage('sniper');
+      }
+    } else if (e.state === 'leave') {
+      e.y += 4 * dt;
+      e.z += 10 * dt;
+      if (e.y > 9) e.dead = true;
+    }
+  }
+
   /** A meteor lands: hurts the player if they are still on its lane (and not flying high). */
   _meteorImpact(e) {
     const p = this.player;
@@ -1263,6 +1391,14 @@ export class LaneWorld {
           break;
         }
         s.hits.add(e.id);
+        // A guard's shield soaks up shots from the front (rockets come from above).
+        if (e.type === 'guard' && e.shieldHp > 0 && !s.rocket) {
+          e.shieldHp -= s.damage;
+          s.dead = true;
+          this._emit('shotBlocked', { x: s.x, y: s.y, z: Math.max(zMin, prevZ), guard: true });
+          if (e.shieldHp <= 0) this._emit('guardShieldBreak', { id: e.id, x: e.x, y: e.y + e.h / 2, z: e.z });
+          break;
+        }
         if (e.kind === 'boss') {
           // A shield stops everything, piercing shots included.
           if (e.shield > 0) s.dead = true;
@@ -1332,11 +1468,15 @@ export class LaneWorld {
     if (e.type === 'charger') this.stats.chargers += 1;
     if (e.type === 'turret') this.stats.turrets += 1;
     if (e.type === 'bomber') this.stats.bombers += 1;
+    if (e.type === 'sniper') this.stats.snipers += 1;
+    if (e.type === 'guard') this.stats.guards += 1;
+    if (e.type === 'car') this.stats.cars += 1;
+    this._gainOverdrive(this.cfg.OVERDRIVE.gain.kill);
     this._emit('kill', { id: e.id, enemy: e.type, x: e.x, y: e.y + e.h / 2, z: e.z, points, combo: c.count });
     if (c.count >= 2) this._emit('combo', { count: c.count });
 
     // Loot: a few coins (and sometimes a gem) pop out.
-    const coins = { drone: 3, bomber: 3, turret: 3, mine: 0 }[e.type] ?? 2;
+    const coins = { drone: 3, bomber: 3, turret: 3, sniper: 3, guard: 4, mine: 0 }[e.type] ?? 2;
     for (let i = 0; i < coins; i++) {
       this._addEntity({ type: 'coin', lane: e.lane ?? 1, dz: 1.2 + i * 1.6, y: 0.6 }, e.z).x = e.x;
     }
@@ -1368,13 +1508,14 @@ export class LaneWorld {
     const p = this.player;
     const box = this.playerBox();
     const tol = this.cfg.WORLD.landTolerance;
+    this._nearMisses();
 
     for (const e of this.entities) {
       if (e.dead || e.kind === 'pickup' || e.kind === 'hazard') continue;
       const b = entityBox(e);
       // A charging ram moves ~3 m per step at low frame rates: sweep its box
       // back to where it was, so it cannot jump through the player.
-      if (e.type === 'charger' && e.prevZ !== undefined) b.z1 = Math.max(b.z1, e.prevZ + e.d / 2);
+      if ((e.type === 'charger' || e.type === 'car') && e.prevZ !== undefined) b.z1 = Math.max(b.z1, e.prevZ + e.d / 2);
       if (!overlaps(box, b)) continue;
       if (e.kind === 'pad') {
         if (e.type === 'turbo' && !e.used) this._startTurbo(e);
@@ -1386,7 +1527,14 @@ export class LaneWorld {
         this._turboSmash(e);
         continue;
       }
-      if (e.type === 'platform') {
+      if (e.type === 'fence') {
+        // A laser fence only hurts while it is on (a heart, not the run).
+        if (e.on && !e.zapped) {
+          e.zapped = true;
+          this._emit('fenceZap', { id: e.id, x: e.x, z: e.z });
+          this._damage('fence');
+        }
+      } else if (e.type === 'platform') {
         if (p.y < e.y + e.h - tol) this._crash(e);
       } else if (e.kind === 'obstacle') {
         this._crash(e);
@@ -1412,6 +1560,24 @@ export class LaneWorld {
         this._damage('plasma');
         if (this.state !== 'running') return;
       }
+    }
+  }
+
+  /** Something dangerous just went by in the lane the player left a moment ago. */
+  _nearMisses() {
+    const p = this.player;
+    const { NEAR_MISS, PLAYER } = this.cfg;
+    const recent = this.time - p.laneChangedAt < NEAR_MISS.window && p.fromLane !== p.lane;
+    for (const e of this.entities) {
+      if (e.dead || e.passed || e.z + e.d / 2 > -PLAYER.depth / 2) continue;
+      e.passed = true;
+      if (!recent || !NEAR_MISS_TYPES.has(e.type) || (e.type === 'fence' && !e.on)) continue;
+      if (Math.abs(e.x - laneX(p.fromLane)) > 0.6 || Math.abs(e.x - p.x) < e.w / 2 + PLAYER.width / 2) continue;
+      const points = Math.round(NEAR_MISS.points * this.scoreMult);
+      this.score.addBonus(points);
+      this.stats.nearMisses += 1;
+      this._gainOverdrive(this.cfg.OVERDRIVE.gain.nearMiss);
+      this._emit('nearMiss', { x: e.x, y: e.y + e.h / 2, z: e.z, points });
     }
   }
 
@@ -1500,6 +1666,7 @@ export class LaneWorld {
         // "Coins" perk: a chance per level that the coin counts double.
         const extra = this.perks.coins && this.rng.chance(0.5 * this.perks.coins) ? 1 : 0;
         this.score.addCoin(1 + extra);
+        this._gainOverdrive(this.cfg.OVERDRIVE.gain.coin);
         if (points > 1) this.score.addBonus(Math.round(this.cfg.SCORE.coin * (points - 1)));
         break;
       }
@@ -1651,6 +1818,8 @@ export class LaneWorld {
       jetpack: p.jetpack,
       rockets: p.rockets,
       turbo: p.turbo,
+      od: p.od,
+      overdrive: p.overdrive,
       event: this.event ? { type: this.event.type, left: Math.max(0, this.event.duration - this.event.t), duration: this.event.duration } : null,
       perks: { ...this.perks },
     };

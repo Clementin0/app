@@ -15,14 +15,14 @@ const POWERUPS = [
   { key: 'rockets', color: 0xb6ff3d, max: 8 },
   { key: 'turbo', color: COLORS.cyan, max: 2.6 },
 ];
-const EVENT_COLORS = { goldRush: COLORS.yellow, meteors: COLORS.orange, ambush: COLORS.red, storm: 0x9fb4ff, lowGravity: 0xd6a8ff };
+const EVENT_COLORS = { goldRush: COLORS.yellow, meteors: COLORS.orange, ambush: COLORS.red, storm: 0x9fb4ff, lowGravity: 0xd6a8ff, traffic: 0xffd23f, blackout: 0xb07cff };
 
 /**
  * In-game HUD drawn by Phaser over the 3D view: score, best, hearts, coins,
  * gems, power-up timers, combo, boss health, zone banner, pause button.
  */
 export class Hud {
-  constructor(scene, { onPause, onSkipTutorial }) {
+  constructor(scene, { onPause, onSkipTutorial, onOverdrive }) {
     this.scene = scene;
     this.lastScore = -1;
     this.lastHp = -1;
@@ -54,6 +54,12 @@ export class Hud {
 
     this.pauseButton = new IconButton(scene, 0, 0, { icon: 'icon_pause', size: 76, color: COLORS.purple, onClick: onPause });
     this.pauseButton.setDepth(DEPTH + 2);
+    // Overdrive: a charge ring around a button, bottom right.
+    this.odRing = scene.add.graphics().setDepth(DEPTH + 1);
+    this.odButton = new IconButton(scene, 0, 0, { icon: 'icon_overdrive', size: 92, color: COLORS.purple, onClick: () => onOverdrive?.() });
+    this.odButton.setDepth(DEPTH + 2);
+    this.odLabel = glow(scene.add.text(0, 0, 'OVERDRIVE', textStyle(18, '#ff8ef0', { strokeThickness: 4 })).setOrigin(0.5).setDepth(DEPTH + 2), COLORS.pink, 10);
+    this.odState = '';
 
     this.message = scene.add.text(0, 0, '', textStyle(64)).setOrigin(0.5).setDepth(DEPTH + 3).setAlpha(0);
     this.subMessage = scene.add.text(0, 0, '', textStyle(30, '#e9ddff')).setOrigin(0.5).setDepth(DEPTH + 3).setAlpha(0);
@@ -119,6 +125,9 @@ export class Hud {
     this.powerups.forEach((p, i) => p.icon.setPosition(m + 30 + i * 64, m + 182));
     this.combo.setPosition(width - m, height * 0.42);
     this.pauseButton.setPosition(width - m - 38, m + 38);
+    this.odPos = { x: width - m - 62, y: height - m - 66 };
+    this.odButton.setPosition(this.odPos.x, this.odPos.y);
+    this.odLabel.setPosition(this.odPos.x, this.odPos.y - 74);
     this.message.setPosition(width / 2, height * 0.32);
     this.subMessage.setPosition(width / 2, height * 0.32 + 62);
     // Above the obstacles and the runner, under the wallet.
@@ -241,6 +250,8 @@ export class Hud {
     }
     this.lastCombo = state.combo;
 
+    this._updateOverdrive(state);
+
     // Boss health.
     this.bossPanel.clear();
     this.bossLabel.setVisible(!!state.boss);
@@ -262,6 +273,30 @@ export class Hud {
       if (state.boss.shield) this.bossPanel.lineStyle(4, 0x7ff3ff, pulse).strokeRoundedRect(b.x - 3, b.y - 3, b.w + 6, 24, 12);
       else this.bossPanel.lineStyle(2, COLORS.white, 0.6).strokeRoundedRect(b.x, b.y, b.w, 18, 9);
     }
+  }
+
+  /** Charge ring, pulsing when full, draining while it runs. */
+  _updateOverdrive(state) {
+    const { x, y } = this.odPos ?? { x: 0, y: 0 };
+    const full = state.od >= 1;
+    const active = state.overdrive > 0;
+    const k = active ? state.overdrive / 6 : state.od;
+    const g = this.odRing;
+    g.clear();
+    g.lineStyle(9, COLORS.ink, 0.7).strokeCircle(x, y, 56);
+    if (k > 0) {
+      const color = active ? 0xff8ef0 : full ? 0xffd23f : 0xb07cff;
+      g.lineStyle(9, color, 1).beginPath().arc(x, y, 56, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, k)).strokePath();
+    }
+    const st = active ? 'active' : full ? 'full' : 'charging';
+    if (st !== this.odState) {
+      this.odState = st;
+      this.odButton.setEnabled(full);
+      this.scene.tweens.killTweensOf(this.odButton);
+      this.odButton.setScale(1);
+      if (full) this.scene.tweens.add({ targets: this.odButton, scale: 1.12, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    }
+    this.odLabel.setVisible(full || active).setAlpha(active ? 1 : 0.6 + 0.4 * Math.sin(this.scene.time.now / 160));
   }
 
   hurtFlash() {

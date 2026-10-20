@@ -66,6 +66,14 @@ export const ENEMIES = Object.freeze({
   turret: { w: 1.2, h: 1.4, d: 1.2, hp: 3, fireEvery: 1.35, range: [12, 50] },
   // Bomber: flies ahead of the player, changes lane and drops mines.
   bomber: { w: 1.5, h: 0.9, y: 1.0, d: 1.2, hp: 3, holdZ: [26, 32], stay: [7, 10], dropEvery: [1.6, 2.4], hop: [1.8, 2.8] },
+  // Sniper: hovers far ahead, paints the player's lane with a red sight,
+  // then fires a beam down it: change lane while it aims (or shoot it).
+  sniper: { w: 1.1, h: 1.0, y: 2.0, d: 1.0, hp: 3, holdZ: [40, 50], aim: 1.15, cool: 1.4, shots: 3 },
+  // Guard: a walker behind an energy shield that soaks up shots (rockets
+  // and explosions get past it). Break the shield, or go around.
+  guard: { w: 1.4, h: 1.9, d: 1.0, hp: 3, shield: 8, walk: 2.5 },
+  // Hover car (traffic event): rushes at the player down its lane.
+  car: { w: 1.7, h: 1.1, d: 2.8, hp: 4, speed: 14 },
 });
 
 export const OBSTACLES = Object.freeze({
@@ -75,6 +83,7 @@ export const OBSTACLES = Object.freeze({
   platform: { w: 2.0, h: 1.4 }, // jump on top and run, d varies
   slider: { w: 2.0, h: 0.9, d: 0.6, period: 2.6 }, // barrier gliding across the lanes: jump it or dodge it
   gap: { w: 2.3, y: -1, h: 1.05, d: 4 }, // hole in the road: jump it (a fall is fatal)
+  fence: { w: 2.2, h: 2.6, d: 0.4, on: 1.0, off: 0.75 }, // laser fence blinking on and off: pass while it is off
 });
 
 export const BOSS = Object.freeze({
@@ -161,7 +170,28 @@ export const EVENTS = Object.freeze({
   storm: { minZone: 1, themes: ['desert', 'ice', 'city'], duration: 14, score: 2, gap: 1.25 },
   // Low gravity: long floaty jumps, floating coins.
   lowGravity: { minZone: 1, themes: ['abyss', 'orbit'], duration: 14, gravity: 0.42, jump: 0.72, coinY: 3 },
+  // Rush hour: hover cars race at the player down the lanes.
+  traffic: { minZone: 1, themes: ['city', 'desert', 'ice', 'orbit'], duration: 14, every: [0.85, 1.4], double: 0.25 },
+  // Blackout: the lights go out, only the neon and your headlight remain.
+  blackout: { minZone: 1, themes: ['city', 'inferno', 'abyss'], duration: 13, score: 1.5, gap: 1.15 },
 });
+
+/**
+ * Overdrive: a meter filled by coins, kills, near misses and smashes. Once
+ * full, the player can trigger it: bullet time (the world slows down while
+ * the overdrive runs in real time), stronger and faster shots, double score.
+ */
+export const OVERDRIVE = Object.freeze({
+  duration: 6, // real seconds
+  timeScale: 0.6,
+  damage: 1.6,
+  fireRate: 0.6, // fire interval multiplier
+  score: 2,
+  gain: { coin: 0.012, kill: 0.05, nearMiss: 0.08, smash: 0.03, boss: 0.3 },
+});
+
+/** Near miss: an obstacle passes in the lane you left a moment ago. */
+export const NEAR_MISS = Object.freeze({ window: 0.45, points: 25 });
 
 /** Falling meteor: a marker on the road, then an impact on that lane. */
 export const METEOR = Object.freeze({ w: 2.0, h: 3, d: 3.4, fallHeight: 22 });
@@ -181,7 +211,7 @@ export const ROCKETS = Object.freeze({ duration: 8, every: 0.7, damage: 3, speed
 export const SCORE = Object.freeze({
   coin: 10,
   gem: 50,
-  kill: { walker: 30, drone: 50, crate: 10, mine: 15, charger: 40, turret: 35, bomber: 55, boss: 500 },
+  kill: { walker: 30, drone: 50, crate: 10, mine: 15, charger: 40, turret: 35, bomber: 55, sniper: 60, guard: 70, car: 40, boss: 500 },
   comboWindow: 2.6,
   comboMax: 8,
 });
@@ -197,4 +227,4 @@ export const POWERUPS = Object.freeze({
   spawnEvery: [14, 24],
 });
 
-export const GAME3D = Object.freeze({ LANES, PLAYER, SPEED, WORLD, WEAPONS_STATS, BULLETS, ENEMIES, OBSTACLES, BOSS, BOSS_RUSH, BOSS_KINDS, SHIELD_PATTERNS, BOSS_COMBOS, ZONES, EVENTS, METEOR, JETPACK, TURBO, RAMP, ROCKETS, SCORE, POWERUPS });
+export const GAME3D = Object.freeze({ LANES, PLAYER, SPEED, WORLD, WEAPONS_STATS, BULLETS, ENEMIES, OBSTACLES, BOSS, BOSS_RUSH, BOSS_KINDS, SHIELD_PATTERNS, BOSS_COMBOS, ZONES, EVENTS, METEOR, JETPACK, TURBO, RAMP, ROCKETS, OVERDRIVE, NEAR_MISS, SCORE, POWERUPS });

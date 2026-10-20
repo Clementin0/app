@@ -182,3 +182,162 @@ describe('v5 boss rush difficulty', () => {
     }
   });
 });
+
+const place = (w, item, z) => w._addEntity({ dz: 0, lane: 1, ...item }, z);
+const { OVERDRIVE, NEAR_MISS, ENEMIES, OBSTACLES, EVENTS } = GAME3D;
+const BASE_HP = GAME3D.PLAYER.baseHp;
+
+describe('v5 overdrive', () => {
+  it('fills with coins and kills, triggers only when full', () => {
+    const w = quietWorld();
+    expect(w.activateOverdrive()).toBe(false);
+    for (let i = 0; i < 20; i++) w._collect({ type: 'coin', x: 0, y: 0.5, z: 0 });
+    expect(w.player.od).toBeCloseTo(20 * OVERDRIVE.gain.coin, 5);
+    w.player.od = 1;
+    expect(w.activateOverdrive()).toBe(true);
+    expect(w.player.od).toBe(0);
+    expect(w.stats.overdrives).toBe(1);
+  });
+
+  it('bullet time: the world slows down while the overdrive runs in real time', () => {
+    const plain = quietWorld();
+    const od = quietWorld();
+    od.player.od = 1;
+    od.activateOverdrive();
+    run(plain, 2);
+    run(od, 2);
+    expect(od.time).toBeCloseTo(plain.time * OVERDRIVE.timeScale, 1);
+    expect(od.player.overdrive).toBeCloseTo(OVERDRIVE.duration - 2, 1);
+    run(od, OVERDRIVE.duration);
+    expect(od.player.overdrive).toBe(0);
+  });
+
+  it('stronger, faster shots and double score while it runs; no meter gain meanwhile', () => {
+    const w = quietWorld();
+    const before = w.weaponStats;
+    const mult = w.scoreMult;
+    w.player.od = 1;
+    w.activateOverdrive();
+    expect(w.weaponStats.damage).toBeCloseTo(before.damage * OVERDRIVE.damage, 5);
+    expect(w.weaponStats.interval).toBeCloseTo(before.interval * OVERDRIVE.fireRate, 5);
+    expect(w.scoreMult).toBeCloseTo(mult * OVERDRIVE.score, 5);
+    w._collect({ type: 'coin', x: 0, y: 0.5, z: 0 });
+    expect(w.player.od).toBe(0);
+  });
+});
+
+describe('v5 near misses', () => {
+  it('an obstacle passing in the lane just left is a near miss', () => {
+    const w = quietWorld();
+    place(w, { type: 'wall', lane: 1 }, 4);
+    run(w, 0.1);
+    w.moveLeft();
+    run(w, 0.5);
+    expect(w.stats.nearMisses).toBe(1);
+    expect(w.state).toBe('running');
+    expect(w.drainEvents().find((e) => e.type === 'nearMiss').points).toBe(NEAR_MISS.points);
+  });
+
+  it('no near miss for a lane left long ago, or for coins', () => {
+    const w = quietWorld();
+    w.moveLeft();
+    run(w, 1);
+    place(w, { type: 'wall', lane: 1 }, 3);
+    place(w, { type: 'coin', lane: 1 }, 3);
+    run(w, 0.6);
+    expect(w.stats.nearMisses).toBe(0);
+  });
+});
+
+describe('v5 threats', () => {
+  it('laser fences blink: on they cost a heart, off they let you through', () => {
+    const { on, off } = OBSTACLES.fence;
+    const throughAt = (phaseAtArrival) => {
+      const w = quietWorld();
+      // Arrives in ~0.4 s at 15 m/s: choose the phase it will have then.
+      const fence = place(w, { type: 'fence', lane: 1, phase: 0 }, 6.4);
+      fence.phase = (((phaseAtArrival - 6.4 / w.speed) % (on + off)) + on + off) % (on + off);
+      run(w, 1);
+      return w.player.hp;
+    };
+    expect(throughAt(0.3)).toBe(BASE_HP - 1);
+    expect(throughAt(on + off / 2)).toBe(BASE_HP);
+  });
+
+  it('a sniper locks a lane, fires down it, and misses once you move', () => {
+    for (const move of [false, true]) {
+      const w = quietWorld();
+      const s = place(w, { type: 'sniper', lane: 0 }, 60);
+      s.holdZ = 45;
+      let aimed = false;
+      run(w, 3.5, (world) => {
+        for (const e of world.drainEvents()) if (e.type === 'sniperAim' && !aimed) {
+          aimed = true;
+          if (move) world.moveRight();
+        }
+      });
+      expect(aimed).toBe(true);
+      expect(w.player.hp, `move ${move}`).toBe(move ? BASE_HP : BASE_HP - 1);
+    }
+  });
+
+  it('a guard shield soaks up shots before the guard takes damage; rockets get past it', () => {
+    const w = quietWorld();
+    const g = place(w, { type: 'guard', lane: 1 }, 40);
+    const shield = g.shieldHp;
+    w.setFiring(true);
+    run(w, 0.5);
+    expect(g.shieldHp).toBeLessThan(shield);
+    expect(g.hp).toBe(g.maxHp);
+    const r = quietWorld();
+    const g2 = place(r, { type: 'guard', lane: 0 }, 40);
+    r.player.rockets = 5;
+    run(r, 2);
+    expect(g2.hp < g2.maxHp || g2.dead).toBe(true);
+    expect(g2.shieldHp).toBe(ENEMIES.guard.shield);
+  });
+
+  it('rush hour: cars race down at most two lanes, after the rows already on the road', () => {
+    const w = quietWorld();
+    w.player.invulnerable = 1e9;
+    w._startEvent('traffic');
+    expect(w.event.delay).toBeGreaterThan(1);
+    let cars = 0;
+    run(w, EVENTS.traffic.duration, (world) => {
+      for (const e of world.drainEvents()) if (e.type === 'carIncoming') {
+        cars += 1;
+        expect(e.lanes.length).toBeLessThanOrEqual(2);
+        expect(world.event.t).toBeGreaterThanOrEqual(world.event.delay - 1e-6);
+      }
+    });
+    expect(cars).toBeGreaterThan(4);
+  });
+
+  it('blackout: score x1.5 and rows a bit further apart, only in its zones', () => {
+    const w = quietWorld();
+    const mult = w.scoreMult;
+    w._startEvent('blackout');
+    expect(w.scoreMult).toBeCloseTo(mult * EVENTS.blackout.score, 5);
+    const seen = new Set();
+    for (let i = 0; i < 60; i++) {
+      const z = new LaneWorld({ rng: createRng(i) });
+      z.zone.index = 2; // ice: no blackout there
+      seen.add(z._pickEvent());
+    }
+    expect(seen.has('blackout')).toBe(false);
+  });
+
+  it('the autopilot survives traffic, blackouts and the new rows', () => {
+    for (const event of ['traffic', 'blackout']) {
+      for (const seed of [21, 22, 23]) {
+        const w = new LaneWorld({ rng: createRng(seed), modifiers: { event } });
+        w.zone.index = event === 'traffic' ? 1 : 3;
+        w.level = 6;
+        w.distance = w.zone.start + GAME3D.ZONES.eventsAt[0] - 1;
+        const bot = new Autopilot3D(w);
+        run(w, 60, () => bot.update(DT));
+        expect(w.state, `${event} seed ${seed}: ${w.deathCause}`).toBe('running');
+      }
+    }
+  });
+});
