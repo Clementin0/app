@@ -110,6 +110,11 @@ async function main() {
    * whose container has alpha 0) and no longer moving, then taps its center.
    */
   async function tapButton(sceneKey, path) {
+    // A run that crosses midnight gets a new daily reward on the menu: take it first.
+    if (sceneKey === 'Menu' && (await evaluate((h) => window[h].activeScenes().includes('Daily'), H))) {
+      await evaluate((h) => window[h].scene('Daily').claim(1), H);
+      await waitFor((h) => !window[h].activeScenes().includes('Daily'), H);
+    }
     step = `tap ${sceneKey}.${path}`;
     const locate = ([h, s, p]) => {
       const N = window[h];
@@ -558,6 +563,67 @@ async function main() {
     // A normal jump peaks at ~1.95 m (sampled lower at headless frame rates).
     check('Low gravity: a much higher jump', lowY > 2.05, `peak ${lowY.toFixed(2)} m`);
     await waitFor((h) => window[h].scene('Game').view.stormK === 0, H, 30000);
+
+    // v5: overdrive from the HUD button, boss attacks that shots cannot stop.
+    step = 'v5 overdrive';
+    await world((w) => {
+      w._endEvent();
+      w.player.od = 1;
+    });
+    await tapButton('Game', 'hud.odButton');
+    await waitWorld((w) => w.player.overdrive > 0, null, 15000);
+    check('Overdrive: the HUD button triggers bullet time', true, `${(await world((w) => w.player.overdrive)).toFixed(1)} s left`);
+    step = 'v5 boss attacks';
+    await world((w) => {
+      w._spawnBoss();
+      w.boss.z = 34;
+      w.boss.attackTimer = 1e9;
+      w._bossAttack(w.boss, 'quake');
+      w._bossAttack(w.boss, 'heavy');
+    });
+    await waitFor((h) => window[h].scene('Game').view.waveMeshes.size === 1 && window[h].scene('Game').view.heavyMeshes.size === 2, H, 15000);
+    check('Boss: quake wave and heavy plasma rendered', true);
+    await world((w) => {
+      w.boss = null;
+      w.waves = [];
+      w.eshots = [];
+    });
+    await forceDeath();
+    await sceneActive('GameOver');
+    await tapButton('GameOver', 'menuButton');
+    await sceneActive('Menu');
+
+    // v5: campaign level 1, won with its stars saved; time attack clock.
+    step = 'v5 campaign';
+    await tapButton('Menu', 'modesButton');
+    await sceneActive('Modes');
+    check('Modes: four modes offered', await evaluate((h) => ['campaignButton', 'dailyButton', 'bossRushButton', 'timeAttackButton'].every((k) => !!window[h].scene('Modes')[k]), H));
+    await tapButton('Modes', 'campaignButton');
+    await sceneActive('Campaign');
+    await evaluate((h) => window[h].scene('Campaign').showDetail(1), H);
+    await tapButton('Campaign', 'playButton');
+    await newRun();
+    await world((w) => {
+      w._damage = () => {};
+      w._crash = () => {};
+      w.distance = w.campaign.goal.value;
+    });
+    await sceneActive('GameOver', 20000);
+    const camp = await evaluate((h) => ({ result: window[h].scene('GameOver').result.campaign, saved: JSON.parse(localStorage.getItem('neondash.save.v1')).campaign?.[1] }), H);
+    check('Campaign: level 1 cleared, stars saved, next level offered', camp.result?.won && camp.saved?.[0] === true && camp.result.hasNext, JSON.stringify(camp));
+    await shot('13-level-cleared');
+    await tapButton('GameOver', 'menuButton');
+    await sceneActive('Campaign', 20000);
+    await tapButton('Campaign', 'closeButton');
+    step = 'v5 time attack';
+    await tapButton('Menu', 'modesButton');
+    await sceneActive('Modes');
+    await tapButton('Modes', 'timeAttackButton');
+    await newRun();
+    await waitWorld((w) => w.time > 2, null, 60000);
+    const ta = await evaluate((h) => { const g = window[h].scene('Game'); return { left: +g.world.timeLeft.toFixed(1), timer: g.hud.timerText.visible && g.hud.timerText.text }; }, H);
+    check('Time attack: the clock runs down on the HUD', ta.left < 60 && !!ta.timer, JSON.stringify(ta));
+    await shot('14-time-attack');
   } catch (err) {
     check(`Unexpected failure during "${step}"`, false, err.message.split('\n')[0]);
     await shot('99-failure').catch(() => {});
