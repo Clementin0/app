@@ -156,6 +156,23 @@ describe('v5 boss rush difficulty', () => {
     expect(strong).toBeGreaterThan(hpAt(2) * 3);
   });
 
+  it('an overdrive running when the boss arrives does not make it tougher', () => {
+    const hpWith = (overdrive) => {
+      const w = quietWorld({ mode: 'bossRush' });
+      w.zone.index = 2;
+      w.player.overdrive = overdrive;
+      w._spawnBoss();
+      return w.boss.maxHp;
+    };
+    expect(hpWith(5)).toBe(hpWith(0));
+    // A run reset in the middle of an overdrive scales from the plain weapon too.
+    const w = quietWorld({ mode: 'bossRush' });
+    const plain = w.startFirepower;
+    w.player.overdrive = 5;
+    w.reset();
+    expect(w.startFirepower).toBe(plain);
+  });
+
   it('boss rush never offers healing loops or useless perks', () => {
     const w = quietWorld({ mode: 'bossRush' });
     for (let i = 0; i < 200; i++) for (const id of w.rollPerks(3)) expect(BOSS_RUSH.noPerks).not.toContain(id);
@@ -419,6 +436,14 @@ describe('v5 campaign', () => {
     const l5 = getLevel(5);
     expect(starsFor(l5, { won: true, coins: 0, hits: 0, time: l5.starTime - 1 })[1]).toBe(true);
     expect(starsFor(l5, { won: true, coins: 999, hits: 0, time: l5.starTime + 1 })[1]).toBe(false);
+  });
+
+  it('a crash revived with the video still costs the "no heart lost" star', () => {
+    const w = quietWorld();
+    w._crash({ type: 'wall', x: 0, z: 0 });
+    expect(w.state).toBe('dead');
+    expect(w.revive()).toBe(true);
+    expect(w.stats.hits).toBe(1);
   });
 
   it('progress is saved: stars never get lost, levels unlock in order, rewards once', async () => {

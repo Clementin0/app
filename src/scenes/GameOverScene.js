@@ -44,6 +44,7 @@ export class GameOverScene extends Phaser.Scene {
     };
     this.busy = false;
     this.continueButton = null;
+    this.nextButton = null; // only on a won campaign level
   }
 
   create() {

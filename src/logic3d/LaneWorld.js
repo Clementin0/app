@@ -66,9 +66,13 @@ export class LaneWorld {
   // ------------------------------------------------------------- setup
 
   get weaponStats() {
+    return this._weaponStats(this.player?.overdrive > 0);
+  }
+
+  _weaponStats(overdrive) {
     const base = this.cfg.WEAPONS_STATS[this.loadout.weapon] ?? this.cfg.WEAPONS_STATS.blaster;
     const perk = (id) => this.perks?.[id] ?? 0;
-    const od = this.player?.overdrive > 0 ? this.cfg.OVERDRIVE : null;
+    const od = overdrive ? this.cfg.OVERDRIVE : null;
     return {
       ...base,
       damage: base.damage * (1 + 0.35 * this.loadout.damageLevel) * (1 + PERK_TUNING.damagePerLevel * perk('damage')) * (od?.damage ?? 1),
@@ -561,9 +565,9 @@ export class LaneWorld {
     return e;
   }
 
-  /** Damage per second of the current weapon, perks included (all shots on a wide target). */
+  /** Damage per second of the current weapon, perks included (all shots on a wide target), without the overdrive. */
   get firepower() {
-    const w = this.weaponStats;
+    const w = this._weaponStats(false);
     const shots = (w.pattern === 'twin' ? 2 : w.pattern === 'spread' ? 3 : 1) + (w.multishot ? 2 : 0);
     return (w.damage * shots) / w.interval;
   }
@@ -1647,6 +1651,7 @@ export class LaneWorld {
       this._emit('shieldBreak', { x: e.x, y: 1, z: e.z });
       return;
     }
+    this.stats.hits += 1; // a crash costs the "no heart lost" star too
     this._die(e.type);
   }
 
