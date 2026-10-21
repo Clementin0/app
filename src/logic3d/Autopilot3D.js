@@ -193,7 +193,9 @@ export class Autopilot3D {
           return !trapped && p.y < e.y + e.h;
         });
         if (!blockedNow) {
-          if (dir < 0) w.moveLeft();
+          // Chaos "mirror": the controls are swapped.
+          const mirrored = w.mutator?.id === 'mirror';
+          if (dir < 0 !== mirrored) w.moveLeft();
           else w.moveRight();
           this.decisionCooldown = 0.1;
         }

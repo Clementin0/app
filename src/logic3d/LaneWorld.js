@@ -21,6 +21,8 @@ const SOLID_OBSTACLES = new Set(['barrier', 'beam', 'wall', 'platform']);
 const SHOTS_PASS = new Set(['barrier', 'slider', 'gap', 'meteor', 'turbo', 'ramp', 'fence']);
 // Enemies that hurt on contact (and break).
 const CONTACT_ENEMIES = new Set(['walker', 'crate', 'mine', 'charger', 'turret', 'guard', 'car']);
+// Parkour: what can be cleared in style (jumped over, slid under, run on).
+const TRICK_TYPES = new Set(['barrier', 'beam', 'slider', 'gap', 'fence', 'wall', 'crate', 'platform']);
 // Things worth a "near miss" when they pass in the lane you just left.
 const NEAR_MISS_TYPES = new Set(['wall', 'barrier', 'beam', 'slider', 'platform', 'fence', 'crate', 'walker', 'charger', 'turret', 'mine', 'guard', 'car']);
 
@@ -53,8 +55,11 @@ export class LaneWorld {
     this.courseRng = courseSeed === null ? this.rng : createRng(courseSeed);
     // A campaign level: a goal, a starting zone and its own rules.
     this.campaign = campaign;
-    this.mode = campaign ? 'campaign' : mode; // 'endless' | 'daily' | 'bossRush' | 'timeAttack' | 'campaign'
-    this.modifiers = { ...DEFAULT_MODIFIERS, ...(campaign?.modifiers ?? {}), ...modifiers, ...(campaign?.weights ? { weights: campaign.weights } : {}) };
+    // 'endless' | 'daily' | 'bossRush' | 'timeAttack' | 'campaign' | 'assault' | 'chaos' | 'parkour' | 'hardcore'
+    this.mode = campaign ? 'campaign' : mode;
+    const H = config.HARDCORE;
+    const rules = this.mode === 'parkour' ? { noShoot: true, weights: config.PARKOUR.weights } : this.mode === 'hardcore' ? { hp: H.hp, speed: H.speed, score: H.score } : {};
+    this.modifiers = { ...DEFAULT_MODIFIERS, ...rules, ...(campaign?.modifiers ?? {}), ...modifiers, ...(campaign?.weights ? { weights: campaign.weights } : {}) };
     this.loadout = { ...DEFAULT_LOADOUT, ...loadout };
     if (this.modifiers.weapon) this.loadout.weapon = this.modifiers.weapon;
     this.spawner = new LaneSpawner(this.courseRng, config);
@@ -94,6 +99,8 @@ export class LaneWorld {
   /** Meters into the zone when the boss shows up. */
   get bossAt() {
     if (this.mode === 'bossRush') return this.zone.index === 0 ? 40 : 70;
+    // Assault: bosses come with the waves; parkour: no bosses at all.
+    if (this.mode === 'assault' || this.mode === 'parkour') return Infinity;
     return this.modifiers.bossAt ?? this.cfg.ZONES.bossAt;
   }
 
@@ -126,6 +133,10 @@ export class LaneWorld {
     this.perkOffer = null; // 3 perk ids to choose from, after a boss
     this.event = null; // run event in progress (gold rush, ambush, meteors)
     this.lastEvent = null;
+    const A = this.cfg.ASSAULT;
+    this.assault = this.mode === 'assault' ? { wave: 0, state: 'intro', timer: A.firstWave, groups: [], groupTimer: 0, spawned: [], total: 0 } : null;
+    this.chaos = this.mode === 'chaos' ? { timer: this.cfg.CHAOS.first, mult: 1, done: 0, bag: [], last: null } : null;
+    this.mutator = null; // chaos mutation in progress
     this.player = {
       lane: 1,
       x: laneX(1),
@@ -163,7 +174,7 @@ export class LaneWorld {
     // Tutorial hooks: no random rows, and nothing can hurt the player.
     this.spawnPaused = false;
     this.safe = false;
-    this.stats = { kills: 0, drones: 0, walkers: 0, crates: 0, chargers: 0, turrets: 0, bombers: 0, bosses: 0, jumps: 0, slides: 0, shots: 0, events: 0, perks: 0, killsSinceHeal: 0, turbos: 0, ramps: 0, smashed: 0, nearMisses: 0, overdrives: 0, snipers: 0, guards: 0, cars: 0, hits: 0, clocks: 0 };
+    this.stats = { kills: 0, drones: 0, walkers: 0, crates: 0, chargers: 0, turrets: 0, bombers: 0, bosses: 0, jumps: 0, slides: 0, shots: 0, events: 0, perks: 0, killsSinceHeal: 0, turbos: 0, ramps: 0, smashed: 0, nearMisses: 0, overdrives: 0, snipers: 0, guards: 0, cars: 0, hits: 0, clocks: 0, waves: 0, mutations: 0, tricks: 0 };
     this.spawner.reset();
     // First rows appear ~50 m ahead, so the action starts within seconds.
     this.distanceToNext = 50 - this.cfg.WORLD.spawnZ;
@@ -198,6 +209,8 @@ export class LaneWorld {
 
   _changeLane(dir) {
     if (this.state !== 'running') return false;
+    // Chaos "mirror": left is right and right is left.
+    if (this.mutator?.id === 'mirror') dir = -dir;
     const p = this.player;
     const target = p.lane + dir;
     if (target < 0 || target >= this.cfg.LANES.count) {
@@ -366,7 +379,8 @@ export class LaneWorld {
     const ramp = this.mode === 'timeAttack' ? this.cfg.TIME_ATTACK.rampTime : SPEED.rampTime;
     const base = top - (top - SPEED.start) * Math.exp(-time / ramp);
     const event = this.event ? (this.cfg.EVENTS[this.event.type]?.speed ?? 1) : 1;
-    return base * event * this.modifiers.speed;
+    const hyper = this.mutator?.id === 'hyper' ? this.cfg.CHAOS.hyper : 1;
+    return base * event * this.modifiers.speed * hyper;
   }
 
   /** Score multiplier of the run (daily modifiers, storm event). */
@@ -374,7 +388,7 @@ export class LaneWorld {
     const ev = this.event?.type;
     const event = ev === 'storm' || ev === 'blackout' ? this.cfg.EVENTS[ev].score : 1;
     const od = this.player?.overdrive > 0 ? this.cfg.OVERDRIVE.score : 1;
-    return this.modifiers.score * event * od;
+    return this.modifiers.score * event * od * (this.chaos?.mult ?? 1);
   }
 
   // ---------------------------------------------------------- overdrive
@@ -411,7 +425,8 @@ export class LaneWorld {
 
   /** Up to `n` distinct perks that are not maxed yet. */
   rollPerks(n = 3) {
-    const banned = this.mode === 'bossRush' ? this.cfg.BOSS_RUSH.noPerks : [];
+    // Boss rush: no healing loops or coin perks; hardcore: one heart means one heart.
+    const banned = this.mode === 'bossRush' ? this.cfg.BOSS_RUSH.noPerks : this.mode === 'hardcore' ? this.cfg.HARDCORE.noPerks : [];
     const pool = PERKS.filter((p) => this.perkLevel(p.id) < p.max && !banned.includes(p.id)).map((p) => p.id);
     const out = [];
     while (out.length < n && pool.length) out.push(pool.splice(this.rng.int(0, pool.length - 1), 1)[0]);
@@ -446,8 +461,18 @@ export class LaneWorld {
   _updateZone(dt) {
     const { ZONES } = this.cfg;
     if (this.zone.cooldown > 0) this.zone.cooldown = Math.max(0, this.zone.cooldown - dt);
+    if (this.assault) {
+      this._updateAssault(dt);
+      return;
+    }
     if (!this.boss && !this.zone.bossDone && !this.event && this.zoneProgress >= this.bossAt) {
       this._spawnBoss();
+      return;
+    }
+    // Parkour: a new zone every kilometer, no boss in between.
+    if (this.mode === 'parkour' && !this.event && this.zoneProgress >= this.cfg.PARKOUR.zoneEvery) this._nextZone(1.5);
+    if (this.chaos) {
+      this._updateChaos(dt);
       return;
     }
     // Run events at fixed points of the zone (not in boss rush).
@@ -464,22 +489,24 @@ export class LaneWorld {
   _pickEvent() {
     if (this.modifiers.event) return this.modifiers.event;
     const theme = zoneTheme(this.zone.index).id;
+    const allowed = this.mode === 'parkour' ? this.cfg.PARKOUR.events : null;
     const options = Object.entries(this.cfg.EVENTS)
-      .filter(([type, e]) => this.zone.index >= e.minZone && type !== this.lastEvent && (!e.themes || e.themes.includes(theme)))
+      .filter(([type, e]) => this.zone.index >= e.minZone && type !== this.lastEvent && (!e.themes || e.themes.includes(theme)) && (!allowed || allowed.includes(type)))
       .map(([type]) => type);
     return options.length ? this.courseRng.pick(options) : null;
   }
 
-  _startEvent(type) {
+  _startEvent(type, duration = null) {
     const cfg = this.cfg.EVENTS[type];
     // Low gravity waits for the rows already on the road (laid out for normal jumps).
     const z = this.cfg.WORLD.spawnZ;
     const v = Math.max(1, this.courseSpeed);
     // Traffic: the first car must not meet the rows already on the road.
     const delay = type === 'lowGravity' ? z / v : type === 'traffic' ? z / v - z / (v + this.cfg.ENEMIES.car.speed) + 0.5 : 0;
-    this.event = { type, t: 0, delay, duration: cfg.duration + delay, waves: 0, waveTimer: 1.2, spawned: [], nextMeteor: 0.5, nextCar: delay };
+    const length = duration ?? cfg.duration;
+    this.event = { type, t: 0, delay, duration: length + delay, waves: 0, waveTimer: 1.2, spawned: [], nextMeteor: 0.5, nextCar: delay };
     this.lastEvent = type;
-    this._emit('eventStart', { event: type, duration: cfg.duration });
+    this._emit('eventStart', { event: type, duration: length });
   }
 
   _updateEvent(dt) {
@@ -489,7 +516,7 @@ export class LaneWorld {
     const cfg = this.cfg.EVENTS[ev.type];
     if (ev.type === 'meteors') {
       ev.nextMeteor -= dt;
-      if (ev.nextMeteor <= 0 && ev.t < cfg.duration - cfg.fuse) {
+      if (ev.nextMeteor <= 0 && ev.t < ev.duration - cfg.fuse) {
         this._spawnMeteor(this.rng.chance(0.55) ? this.player.lane : this.rng.int(0, this.cfg.LANES.count - 1));
         ev.nextMeteor = cfg.every;
       }
@@ -565,6 +592,200 @@ export class LaneWorld {
     return e;
   }
 
+  // ------------------------------------------------------------ assault
+
+  _updateAssault(dt) {
+    const a = this.assault;
+    const A = this.cfg.ASSAULT;
+    if (a.state === 'intro') {
+      // The next wave waits for the perk choice and the zone change.
+      if (this.perkOffer || this.spawnPaused || this.zone.cooldown > 0) return;
+      a.timer -= dt;
+      if (a.timer <= 0) this._startWave();
+    } else if (a.state === 'wave') {
+      if (a.groups.length) {
+        a.groupTimer -= dt;
+        if (a.groupTimer <= 0) {
+          for (const item of a.groups.shift()) a.spawned.push(this._addEntity(item, A.spawnZ));
+          a.groupTimer = this.rng.range(...A.groupEvery);
+        }
+      } else if (a.spawned.every((e) => e.dead || e.z + e.d / 2 <= this.cfg.WORLD.despawnZ)) {
+        this._clearWave(false);
+      }
+    } else if (a.state === 'boss' && !this.boss) {
+      this._clearWave(true);
+    }
+  }
+
+  _startWave() {
+    const a = this.assault;
+    a.wave += 1;
+    const boss = a.wave % this.cfg.ASSAULT.bossEvery === 0;
+    a.spawned = [];
+    a.groupTimer = 0;
+    if (boss) {
+      a.state = 'boss';
+      a.groups = [];
+      a.total = 1;
+      this._spawnBoss();
+    } else {
+      a.state = 'wave';
+      a.groups = this._assaultGroups(a.wave);
+      a.total = a.groups.reduce((n, g) => n + g.length, 0);
+    }
+    this._emit('waveStart', { wave: a.wave, boss, enemies: a.total });
+  }
+
+  /**
+   * The enemies of a wave, in groups that arrive one after the other. A
+   * group never puts three enemies on the ground: one lane always stays open.
+   */
+  _assaultGroups(n) {
+    const A = this.cfg.ASSAULT;
+    const pool = Object.entries(A.unlock)
+      .filter(([, from]) => n >= from)
+      .map(([type]) => type);
+    let left = Math.min(A.maxEnemies, 3 + Math.floor(n * 0.9));
+    let flyers = 0;
+    const groups = [];
+    while (left > 0) {
+      const size = Math.min(left, this.rng.int(1, n >= 4 ? 3 : 2));
+      const lanes = [0, 1, 2];
+      for (let i = lanes.length - 1; i > 0; i--) {
+        const j = this.rng.int(0, i);
+        [lanes[i], lanes[j]] = [lanes[j], lanes[i]];
+      }
+      const group = [];
+      let ground = 0;
+      for (let i = 0; i < size; i++) {
+        let type = this.rng.pick(pool);
+        let flyer = type === 'drone' || type === 'bomber' || type === 'sniper';
+        // At most three flyers per wave, two enemies on the ground per group
+        // (when both are full, the enemy waits for the next group).
+        if (flyer && flyers >= 3) [type, flyer] = ['walker', false];
+        if (!flyer && ground >= 2) {
+          if (flyers >= 3) break;
+          [type, flyer] = ['drone', true];
+        }
+        if (flyer) flyers += 1;
+        else ground += 1;
+        group.push({ type, lane: lanes[i], dz: i * 3 });
+      }
+      groups.push(group);
+      left -= group.length;
+    }
+    return groups;
+  }
+
+  _clearWave(boss) {
+    const a = this.assault;
+    const A = this.cfg.ASSAULT;
+    const perfect = boss || a.spawned.every((e) => e.killed);
+    const coins = A.coins + A.perWave * a.wave;
+    this.score.addCoin(coins);
+    const points = perfect && !boss ? Math.round(A.perfect * this.scoreMult) : 0;
+    if (points) this.score.addBonus(points);
+    this.stats.waves = a.wave;
+    a.state = 'intro';
+    a.timer = A.pause;
+    a.spawned = [];
+    this._emit('waveClear', { wave: a.wave, boss, perfect, coins, points });
+  }
+
+  // -------------------------------------------------------------- chaos
+
+  _updateChaos(dt) {
+    const ch = this.chaos;
+    const m = this.mutator;
+    if (m) {
+      m.t += dt;
+      const over = m.event ? this.event?.type !== m.id : m.t >= m.duration;
+      if (over) this._endMutator();
+      else if (m.id === 'rockets') this.player.rockets = Math.max(this.player.rockets, 0.5);
+      else if (m.id === 'magnet') {
+        this.player.magnet = Math.max(this.player.magnet, 0.5);
+        this.player.double = Math.max(this.player.double, 0.5);
+      }
+      return;
+    }
+    if (this.boss || this.event || this.spawnPaused) return;
+    ch.timer -= dt;
+    if (ch.timer <= 0) this._startMutator(this._nextMutator());
+  }
+
+  /** Mutations come in a shuffled bag: all of them before any repeats. */
+  _nextMutator() {
+    const ch = this.chaos;
+    if (!ch.bag.length) {
+      const bag = [...this.cfg.CHAOS.mutators];
+      for (let i = bag.length - 1; i > 0; i--) {
+        const j = this.courseRng.int(0, i);
+        [bag[i], bag[j]] = [bag[j], bag[i]];
+      }
+      if (bag[0] === ch.last) bag.push(bag.shift());
+      ch.bag = bag;
+    }
+    return ch.bag.shift();
+  }
+
+  _startMutator(id) {
+    const C = this.cfg.CHAOS;
+    const event = C.events.includes(id);
+    if (event) this._startEvent(id, C.duration);
+    this.mutator = { id, t: 0, duration: event ? this.event.duration : C.duration, event };
+    this.chaos.last = id;
+    this._emit('mutator', { id, duration: C.duration });
+  }
+
+  _endMutator() {
+    const ch = this.chaos;
+    const C = this.cfg.CHAOS;
+    const { id } = this.mutator;
+    this.mutator = null;
+    ch.done += 1;
+    ch.mult = Math.min(C.multMax, 1 + C.multStep * ch.done);
+    ch.timer = Math.max(2, C.every - C.duration);
+    this.stats.mutations = ch.done;
+    this._emit('mutatorEnd', { id, mult: ch.mult });
+  }
+
+  /** Size of the runner (chaos "tiny"). */
+  get playerScale() {
+    return this.mutator?.id === 'tiny' ? this.cfg.CHAOS.tiny : 1;
+  }
+
+  /** Row weights: chaos mutations, then the run's modifiers (campaign, parkour). */
+  _rowWeights() {
+    const id = this.mutator?.id;
+    if (id === 'swarm' || id === 'fortress') return this.cfg.CHAOS[id];
+    return this.modifiers.weights;
+  }
+
+  // ------------------------------------------------------------ parkour
+
+  /** A trick (parkour): the chain multiplies its points, a hit breaks it. */
+  _trick(kind) {
+    const P = this.cfg.PARKOUR;
+    const c = this.combo;
+    c.count = c.timer > 0 ? Math.min(P.chainMax, c.count + 1) : 1;
+    c.timer = P.chainWindow;
+    c.best = Math.max(c.best, c.count);
+    const points = Math.round(P.trickPoints * c.count * (this.player.double > 0 ? 2 : 1) * this.scoreMult);
+    this.score.addBonus(points);
+    this.stats.tricks += 1;
+    this._gainOverdrive(this.cfg.OVERDRIVE.gain.nearMiss * 0.5);
+    this._emit('trick', { kind, chain: c.count, points });
+  }
+
+  /** Parkour: an obstacle of the runner's lane went by, cleared in the air or sliding. */
+  _trickOver(e) {
+    if (!TRICK_TYPES.has(e.type) || (e.type === 'fence' && !e.on)) return;
+    const p = this.player;
+    if (Math.abs(e.x - p.x) >= e.w / 2 + this.cfg.PLAYER.width / 2 - 0.15) return;
+    const kind = e.type === 'platform' ? 'platform' : p.y > 0.35 ? 'air' : p.slide > 0 ? 'slide' : null;
+    if (kind) this._trick(kind);
+  }
+
   /** Damage per second of the current weapon, perks included (all shots on a wide target), without the overdrive. */
   get firepower() {
     const w = this._weaponStats(false);
@@ -637,12 +858,16 @@ export class LaneWorld {
       }
     }
     this.boss = null;
-    this.zone = { index: this.zone.index + 1, start: this.distance, bossDone: false, cooldown: 2.5, eventsDone: 0 };
-    this._emit('zone', { index: this.zone.index });
+    this._nextZone(2.5);
     // Pick one of three perks before the next zone (the scene pauses for it).
     const offer = this.rollPerks(3);
     this.perkOffer = offer.length ? offer : null;
     if (this.perkOffer) this._emit('perkOffer', { options: [...this.perkOffer] });
+  }
+
+  _nextZone(cooldown) {
+    this.zone = { index: this.zone.index + 1, start: this.distance, bossDone: false, cooldown, eventsDone: 0 };
+    this._emit('zone', { index: this.zone.index });
   }
 
   _updateBoss(dt) {
@@ -656,7 +881,7 @@ export class LaneWorld {
 
     const rush = this.mode === 'bossRush';
     // Boss rush and campaign: no escape, the boss gets enraged instead.
-    const noEscape = rush || this.mode === 'campaign';
+    const noEscape = rush || this.mode === 'campaign' || this.mode === 'assault';
     if (b.shield > 0) {
       b.shield = Math.max(0, b.shield - dt);
       if (b.shield === 0) this._emit('bossShieldDown', { x: b.x, y: b.y + b.h / 2, z: b.z });
@@ -854,7 +1079,7 @@ export class LaneWorld {
     while (this.distanceToNext <= 0) {
       const z0 = WORLD.spawnZ + this.distanceToNext;
       const ev = this.event?.type;
-      const quiet = bossPhase || this.zone.cooldown > 0 || ev === 'ambush' || ev === 'meteors' || ev === 'traffic' || this.mode === 'bossRush';
+      const quiet = bossPhase || this.zone.cooldown > 0 || ev === 'ambush' || ev === 'meteors' || ev === 'traffic' || this.mode === 'bossRush' || this.mode === 'assault';
       // Rows are laid out for the course speed: one spawned in turbo is
       // reached after it, at the normal speed.
       const speed = this.courseSpeed;
@@ -863,7 +1088,7 @@ export class LaneWorld {
           ? this.spawner.goldRush(speed)
           : quiet
             ? this.spawner.coinsOnly(speed)
-            : this.spawner.next(this.level, speed, { lowGravity: ev === 'lowGravity', weights: this.modifiers.weights });
+            : this.spawner.next(this.level, speed, { lowGravity: ev === 'lowGravity', weights: this._rowWeights() });
       for (const item of pattern.items) this._addEntity(item, z0);
       // Time attack: a clock every few rows, in the gap after the row.
       if (this.timeLeft !== null && ++this.rowsSinceClock >= this.cfg.TIME_ATTACK.clockEvery) {
@@ -1037,8 +1262,11 @@ export class LaneWorld {
   playerBox() {
     const p = this.player;
     const { PLAYER } = this.cfg;
-    const h = p.slide > 0 ? PLAYER.slideHeight : PLAYER.height;
-    return { x0: p.x - PLAYER.width / 2, x1: p.x + PLAYER.width / 2, y0: p.y, y1: p.y + h, z0: -PLAYER.depth / 2, z1: PLAYER.depth / 2 };
+    const k = this.playerScale;
+    const h = (p.slide > 0 ? PLAYER.slideHeight : PLAYER.height) * k;
+    const w = (PLAYER.width * k) / 2;
+    const d = (PLAYER.depth * k) / 2;
+    return { x0: p.x - w, x1: p.x + w, y0: p.y, y1: p.y + h, z0: -d, z1: d };
   }
 
   _updatePlayer(dt) {
@@ -1140,6 +1368,7 @@ export class LaneWorld {
     p.bufferJump = 0;
     this.stats.ramps += 1;
     this._emit('ramp', { x: ramp.x, z: ramp.z });
+    if (this.mode === 'parkour') this._trick('ramp');
   }
 
   /** Turbo pad: faster, untouchable, smashing through everything for a while. */
@@ -1152,6 +1381,14 @@ export class LaneWorld {
   }
 
   _turboSmash(e) {
+    if (this.mode === 'parkour') {
+      // No kills in parkour: smashing through is a trick.
+      e.dead = true;
+      this.stats.smashed += 1;
+      this._emit('smash', { id: e.id, enemy: e.type, x: e.x, y: e.y + e.h / 2, z: e.z, turbo: true, points: 0 });
+      this._trick('smash');
+      return;
+    }
     if (e.kind === 'enemy') {
       this.stats.smashed += 1;
       this._kill(e);
@@ -1626,9 +1863,11 @@ export class LaneWorld {
     const p = this.player;
     const { NEAR_MISS, PLAYER } = this.cfg;
     const recent = this.time - p.laneChangedAt < NEAR_MISS.window && p.fromLane !== p.lane;
+    const parkour = this.mode === 'parkour';
     for (const e of this.entities) {
       if (e.dead || e.passed || e.z + e.d / 2 > -PLAYER.depth / 2) continue;
       e.passed = true;
+      if (parkour) this._trickOver(e);
       if (!recent || !NEAR_MISS_TYPES.has(e.type) || (e.type === 'fence' && !e.on)) continue;
       if (Math.abs(e.x - laneX(p.fromLane)) > 0.6 || Math.abs(e.x - p.x) < e.w / 2 + PLAYER.width / 2) continue;
       const points = Math.round(NEAR_MISS.points * this.scoreMult);
@@ -1637,6 +1876,7 @@ export class LaneWorld {
       this._gainOverdrive(this.cfg.OVERDRIVE.gain.nearMiss);
       this._addTime(this.cfg.TIME_ATTACK.nearMiss, 'nearMiss');
       this._emit('nearMiss', { x: e.x, y: e.y + e.h / 2, z: e.z, points });
+      if (parkour) this._trick('close');
     }
   }
 
@@ -1830,7 +2070,8 @@ export class LaneWorld {
 
   get canRevive() {
     // A campaign boss that got away cannot be brought back.
-    return this.state === 'dead' && !this.reviveUsed && this.deathCause !== 'bossFled';
+    // Hardcore: no second chance.
+    return this.state === 'dead' && !this.reviveUsed && this.deathCause !== 'bossFled' && this.mode !== 'hardcore';
   }
 
   /** Second chance (rewarded ad): full health, nearby threats cleared, short invulnerability. */
@@ -1891,6 +2132,11 @@ export class LaneWorld {
       goal: this.campaign ? { type: this.campaign.goal.type, value: this.campaign.goal.value, progress: Math.min(this.campaign.goal.value, this.goalProgress) } : null,
       event: this.event ? { type: this.event.type, left: Math.max(0, this.event.duration - this.event.t), duration: this.event.duration } : null,
       perks: { ...this.perks },
+      mode: this.mode,
+      wave: this.assault ? { n: this.assault.wave, state: this.assault.state, total: this.assault.total, left: this.assault.state === 'wave' ? this.assault.groups.reduce((n, g) => n + g.length, 0) + this.assault.spawned.filter((e) => !e.dead && e.z + e.d / 2 > this.cfg.WORLD.despawnZ).length : 0, boss: this.assault.state === 'boss' } : null,
+      mutator: this.mutator ? { id: this.mutator.id, left: Math.max(0, this.mutator.duration - this.mutator.t), duration: this.mutator.duration } : null,
+      chaosMult: this.chaos?.mult ?? 1,
+      scale: this.playerScale,
     };
   }
 }

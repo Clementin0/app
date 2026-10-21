@@ -193,6 +193,83 @@ export const OVERDRIVE = Object.freeze({
 /** Time attack: beat the clock. Clocks on the road, kills and near misses add time. */
 export const TIME_ATTACK = Object.freeze({ start: 60, clock: 4, kill: 0.5, nearMiss: 0.5, boss: 10, clockEvery: 5, rampTime: 55, reviveTime: 15 });
 
+/**
+ * Assault: waves of enemies on an open road (only coins between them). Every
+ * fifth wave is a boss, followed by a perk and a new zone.
+ */
+export const ASSAULT = Object.freeze({
+  firstWave: 2.5, // seconds before the first wave
+  pause: 3.2, // seconds between two waves
+  bossEvery: 5,
+  groupEvery: [1.4, 2.2], // seconds between the groups of a wave
+  spawnZ: 62,
+  maxEnemies: 12,
+  coins: 6, // coins for a cleared wave, +perWave per wave number
+  perWave: 2,
+  perfect: 150, // points when every enemy of the wave was shot down
+  // First wave each enemy can show up in.
+  unlock: { walker: 1, drone: 1, crate: 1, charger: 2, turret: 3, bomber: 4, sniper: 6, guard: 7 },
+});
+
+/**
+ * Chaos: every few seconds a mutation changes the rules for a while; each
+ * one survived raises the score multiplier.
+ */
+export const CHAOS = Object.freeze({
+  first: 8, // seconds before the first mutation
+  every: 20, // seconds from one mutation to the next
+  duration: 14,
+  multStep: 0.25,
+  multMax: 3,
+  mutators: ['mirror', 'tiny', 'hyper', 'swarm', 'fortress', 'rockets', 'magnet', 'lowGravity', 'blackout', 'storm', 'meteors', 'traffic'],
+  // Mutations that are run events (they ignore the zone's theme here).
+  events: ['lowGravity', 'blackout', 'storm', 'meteors', 'traffic'],
+  hyper: 1.3, // speed
+  tiny: 0.55, // size of the runner (and of its hitbox)
+  swarm: { droneWave: 4, bomberRun: 3, sniperNest: 2.5, turretNest: 2, walkers: 2 },
+  fortress: { wallGate: 3, laserFences: 3, fenceGauntlet: 3, chasm: 2, sliders: 2, mixedRow: 2, platformRun: 2 },
+});
+
+/**
+ * Parkour: no weapon, obstacle courses, a new zone every kilometer. Clearing
+ * obstacles in style (jumps, slides, ramps, near misses, smashes) builds a
+ * trick chain that multiplies the points.
+ */
+export const PARKOUR = Object.freeze({
+  zoneEvery: 1000,
+  trickPoints: 15,
+  chainWindow: 3,
+  chainMax: 20,
+  events: ['goldRush', 'storm', 'lowGravity', 'blackout', 'meteors', 'traffic'],
+  weights: {
+    walkers: 0,
+    droneWave: 0,
+    ram: 0,
+    turretNest: 0,
+    bomberRun: 0,
+    sniperNest: 0,
+    guardPost: 0,
+    ambush: 0,
+    crates: 0.4,
+    coinLine: 0.5,
+    barrierRow: 1.6,
+    beamRow: 1.6,
+    jumpThenSlide: 2,
+    sliders: 2,
+    chasm: 2,
+    chasmAll: 1.5,
+    platformRun: 2.5,
+    rampJump: 3,
+    turboStrip: 2,
+    laserFences: 2,
+    fenceGauntlet: 1.5,
+    mixedRow: 1.5,
+  },
+});
+
+/** Hardcore: one heart, faster, triple score, no second chance. */
+export const HARDCORE = Object.freeze({ hp: 1, speed: 1.15, score: 3, noPerks: ['heart', 'vampire'] });
+
 /** Near miss: an obstacle passes in the lane you left a moment ago. */
 export const NEAR_MISS = Object.freeze({ window: 0.6, points: 25 });
 
@@ -230,4 +307,4 @@ export const POWERUPS = Object.freeze({
   spawnEvery: [14, 24],
 });
 
-export const GAME3D = Object.freeze({ LANES, PLAYER, SPEED, WORLD, WEAPONS_STATS, BULLETS, ENEMIES, OBSTACLES, BOSS, BOSS_RUSH, BOSS_KINDS, SHIELD_PATTERNS, BOSS_COMBOS, ZONES, EVENTS, METEOR, JETPACK, TURBO, RAMP, ROCKETS, OVERDRIVE, NEAR_MISS, TIME_ATTACK, SCORE, POWERUPS });
+export const GAME3D = Object.freeze({ LANES, PLAYER, SPEED, WORLD, WEAPONS_STATS, BULLETS, ENEMIES, OBSTACLES, BOSS, BOSS_RUSH, BOSS_KINDS, SHIELD_PATTERNS, BOSS_COMBOS, ZONES, EVENTS, METEOR, JETPACK, TURBO, RAMP, ROCKETS, OVERDRIVE, NEAR_MISS, TIME_ATTACK, ASSAULT, CHAOS, PARKOUR, HARDCORE, SCORE, POWERUPS });
