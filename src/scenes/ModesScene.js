@@ -7,14 +7,18 @@ import { Button } from '../ui/Button.js';
 import { bannerReserve, bindLayout } from '../ui/layout.js';
 import { COLORS, glow, hex, textStyle } from '../ui/theme.js';
 
-const PANEL_W = 940;
-const PANEL_H = 590;
-const CARD_W = 440;
-const CARD_H = 200;
-const ROWS = [92, 306];
-const COLS = [-CARD_W / 2 - 12, CARD_W / 2 + 12];
+const PANEL_W = 1200;
+const PANEL_H = 636;
+const CARD_W = 272;
+const CARD_H = 232;
+const GAP = 16;
+const ROWS = [86, 86 + CARD_H + GAP];
+const COLS = [0, 1, 2, 3].map((i) => (i - 1.5) * (CARD_W + GAP));
 
-/** The modes beyond the classic run: campaign, daily challenge, boss rush, time attack. */
+/**
+ * The modes beyond the classic run, in a 4x2 grid: campaign, daily
+ * challenge, boss rush, time attack, assault, chaos, parkour, hardcore.
+ */
 export class ModesScene extends Phaser.Scene {
   constructor() {
     super('Modes');
@@ -35,7 +39,7 @@ export class ModesScene extends Phaser.Scene {
     const bg = this.add.graphics();
     bg.fillStyle(COLORS.panel, 0.97).fillRoundedRect(-PANEL_W / 2, 0, PANEL_W, PANEL_H, 36);
     bg.lineStyle(3, COLORS.purple, 0.9).strokeRoundedRect(-PANEL_W / 2, 0, PANEL_W, PANEL_H, 36);
-    const title = glow(this.add.text(0, 46, t('modes'), textStyle(44)).setOrigin(0.5), COLORS.purple, 18);
+    const title = glow(this.add.text(0, 44, t('modes'), textStyle(42)).setOrigin(0.5), COLORS.purple, 18);
     this.panel.add([bg, title]);
 
     const stars = save.totalStars;
@@ -71,12 +75,44 @@ export class ModesScene extends Phaser.Scene {
         icon: 'icon_clock',
         onClick: () => this.play('timeAttack'),
       },
+      {
+        key: 'assault',
+        color: COLORS.orange,
+        title: t('modeAssault'),
+        lines: [t('modeAssaultDesc'), t('modeBestWaves', { n: save.modeBest('assault').waves })],
+        icon: 'icon_target',
+        onClick: () => this.play('assault'),
+      },
+      {
+        key: 'chaos',
+        color: 0xb07cff,
+        title: t('modeChaos'),
+        lines: [t('modeChaosDesc'), t('modeBest', { n: fmt(save.modeBest('chaos').score) })],
+        icon: 'icon_dice',
+        onClick: () => this.play('chaos'),
+      },
+      {
+        key: 'parkour',
+        color: 0x39ffd2,
+        title: t('modeParkour'),
+        lines: [t('modeParkourDesc'), t('modeBest', { n: fmt(save.modeBest('parkour').score) })],
+        icon: 'icon_jump',
+        onClick: () => this.play('parkour'),
+      },
+      {
+        key: 'hardcore',
+        color: COLORS.red,
+        title: t('modeHardcore'),
+        lines: [t('modeHardcoreDesc'), t('modeBest', { n: fmt(save.modeBest('hardcore').score) })],
+        icon: 'icon_skull',
+        onClick: () => this.play('hardcore'),
+      },
     ];
     cards.forEach((c, i) => {
-      const x = COLS[i % 2];
-      const y = ROWS[Math.floor(i / 2)];
+      const x = COLS[i % 4];
+      const y = ROWS[Math.floor(i / 4)];
       const items = this._card(x, y, c);
-      const button = new Button(this, x + CARD_W / 2 - 112, y + CARD_H - 44, { label: c.label ?? t('play'), icon: c.icon ?? 'icon_play', width: 196, height: 60, fontSize: 24, color: c.color, onClick: c.onClick });
+      const button = new Button(this, x, y + CARD_H - 38, { label: c.label ?? t('play'), icon: c.icon ?? 'icon_play', width: CARD_W - 40, height: 56, fontSize: 22, color: c.color, onClick: c.onClick });
       this[`${c.key}Button`] = button;
       this.panel.add([...items, button]);
     });
@@ -99,13 +135,15 @@ export class ModesScene extends Phaser.Scene {
     const g = this.add.graphics();
     g.fillStyle(COLORS.ink, 0.75).fillRoundedRect(x - CARD_W / 2, y, CARD_W, CARD_H, 24);
     g.lineStyle(3, color, 0.9).strokeRoundedRect(x - CARD_W / 2, y, CARD_W, CARD_H, 24);
-    const left = x - CARD_W / 2 + 24;
-    const head = glow(this.add.text(left, y + 18, title, textStyle(30, hex(color))), color, 10);
+    const left = x - CARD_W / 2 + 18;
+    const head = glow(this.add.text(left, y + 14, title, textStyle(25, hex(color))), color, 10);
+    // Long titles (some languages) shrink to fit the card.
+    if (head.width > CARD_W - 36) head.setFontSize(Math.floor((25 * (CARD_W - 36)) / head.width));
     const items = [g, head];
-    let ly = y + 62;
+    let ly = y + 52;
     for (const text of lines) {
       if (!text) continue;
-      const line = this.add.text(left, ly, text, textStyle(17, '#e9ddff', { wordWrap: { width: CARD_W - 48 } }));
+      const line = this.add.text(left, ly, text, textStyle(15, '#e9ddff', { wordWrap: { width: CARD_W - 36 } }));
       items.push(line);
       ly += line.height + 4;
     }

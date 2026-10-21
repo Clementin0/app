@@ -91,6 +91,19 @@ const SOUNDS = {
     { type: 'noise', dur: 0.16, vol: 0.07 },
     { type: 'sine', from: 500, to: 1400, dur: 0.16, vol: 0.05 },
   ],
+  // Chaos mutation: a glitchy warble.
+  mutate: [
+    { type: 'square', from: 200, to: 1200, dur: 0.12, vol: 0.06 },
+    { type: 'square', from: 1200, to: 300, dur: 0.12, vol: 0.06, delay: 0.12 },
+    { type: 'sawtooth', from: 300, to: 1600, dur: 0.3, vol: 0.06, delay: 0.24 },
+  ],
+  // Parkour trick: a short rising chirp.
+  trick: [{ type: 'triangle', from: 900, to: 1800, dur: 0.09, vol: 0.07 }],
+  // Assault: the next wave is coming.
+  wave: [
+    { type: 'sawtooth', from: 110, to: 220, dur: 0.25, vol: 0.09 },
+    { type: 'sawtooth', from: 165, to: 330, dur: 0.25, vol: 0.09, delay: 0.28 },
+  ],
   newBest: [
     { type: 'triangle', from: 784, to: 784, dur: 0.1, vol: 0.12 },
     { type: 'triangle', from: 1047, to: 1047, dur: 0.1, vol: 0.12, delay: 0.1 },

@@ -596,6 +596,59 @@ function drawIcons(scene) {
     ctx.lineTo(42, 56);
     ctx.stroke();
   });
+  icon('icon_dice', (ctx) => {
+    // Chaos: a die.
+    ctx.lineWidth = 5;
+    roundRect(ctx, 9, 9, 46, 46, 10);
+    ctx.stroke();
+    for (const [x, y] of [[22, 22], [42, 22], [32, 32], [22, 42], [42, 42]]) {
+      ctx.beginPath();
+      ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  icon('icon_jump', (ctx) => {
+    // Parkour: a leap over a block.
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(6, 50);
+    ctx.quadraticCurveTo(30, -6, 54, 46);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(54, 52);
+    ctx.lineTo(44, 38);
+    ctx.lineTo(60, 36);
+    ctx.closePath();
+    ctx.fill();
+    roundRect(ctx, 22, 40, 18, 18, 3);
+    ctx.fill();
+  });
+  icon('icon_skull', (ctx) => {
+    // Hardcore.
+    ctx.beginPath();
+    ctx.arc(32, 28, 21, Math.PI * 0.85, Math.PI * 0.15);
+    ctx.lineTo(44, 50);
+    ctx.lineTo(20, 50);
+    ctx.closePath();
+    ctx.fill();
+    roundRect(ctx, 22, 46, 20, 12, 3);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'destination-out';
+    for (const x of [23, 41]) {
+      ctx.beginPath();
+      ctx.arc(x, 29, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.moveTo(32, 36);
+    ctx.lineTo(28, 43);
+    ctx.lineTo(36, 43);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillRect(28, 50, 2, 8);
+    ctx.fillRect(34, 50, 2, 8);
+    ctx.globalCompositeOperation = 'source-over';
+  });
   icon('icon_lock', (ctx) => {
     ctx.lineWidth = 7;
     ctx.beginPath();

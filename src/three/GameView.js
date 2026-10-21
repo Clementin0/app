@@ -463,6 +463,9 @@ export class GameView {
     const c = this.character;
     if (w.state !== 'dead') {
       c.position.set(X(p.x), p.y, 0);
+      // Chaos "tiny": the runner shrinks (and grows back) smoothly.
+      const scale = c.scale.x + (w.playerScale - c.scale.x) * Math.min(1, dt * 8);
+      c.scale.setScalar(scale);
       const lean = Math.max(-0.35, Math.min(0.35, (X(p.x) - c.userData.lastX || 0) * 3));
       c.userData.lastX = X(p.x);
       // World time: the run cycle stops with the game (pause, countdown, tutorial freeze).

@@ -40,6 +40,9 @@ export class GameOverScene extends Phaser.Scene {
       challengeReward: null,
       campaign: null,
       timeUp: false,
+      waves: 0,
+      mutations: 0,
+      tricks: 0,
       ...data,
     };
     this.busy = false;
@@ -99,7 +102,13 @@ export class GameOverScene extends Phaser.Scene {
     const gemText = this.add.text(-86, 278, `+${r.gems}`, textStyle(30, '#7ff3ff')).setOrigin(0, 0.5);
     const killIcon = this.add.image(40, 278, 'icon_target').setScale(0.55).setTint(COLORS.red);
     const killText = this.add.text(66, 278, String(r.kills ?? 0), textStyle(30, '#ff9ab0')).setOrigin(0, 0.5);
-    const zoneLabel = r.mode === 'bossRush' ? t('bossesBeaten', { n: r.bosses }) : camp ? t('levelTitle', { n: camp.level }) : `${t('zoneReached')} ${r.zone ?? 1}`;
+    const modeLabels = {
+      bossRush: () => t('bossesBeaten', { n: r.bosses }),
+      assault: () => t('wavesCleared', { n: r.waves }),
+      chaos: () => t('mutationsSurvived', { n: r.mutations }),
+      parkour: () => t('tricksDone', { n: r.tricks }),
+    };
+    const zoneLabel = modeLabels[r.mode]?.() ?? (camp ? t('levelTitle', { n: camp.level }) : `${t('zoneReached')} ${r.zone ?? 1}`);
     const zoneText = this.add.text(PANEL_W / 2 - 60, 278, zoneLabel, textStyle(30, '#c9b8ff')).setOrigin(1, 0.5);
 
     // XP of the run and the level bar.

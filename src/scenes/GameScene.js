@@ -3,7 +3,7 @@ import { getLevel, starsFor } from '../config/campaign.js';
 import { bossKind } from '../config/game3d.config.js';
 import { zoneTheme } from '../config/zones.js';
 import { loadoutFrom } from '../config/upgrades.js';
-import { t } from '../i18n.js';
+import { fmtMult, t } from '../i18n.js';
 import { xpForRun } from '../logic/Progression.js';
 import { createRng } from '../logic/rng.js';
 import { LaneWorld } from '../logic3d/LaneWorld.js';
@@ -11,6 +11,7 @@ import { Missions } from '../logic3d/Missions.js';
 import { Tutorial } from '../logic3d/Tutorial.js';
 import { AutoQuality, lowerQuality } from '../services/AutoQuality.js';
 import { dailyChallenge } from '../services/DailyChallenge.js';
+import { MODE_RECORDS } from '../services/SaveData.js';
 import { services } from '../services/services.js';
 import { GameView } from '../three/GameView.js';
 import { goalText } from './CampaignScene.js';
@@ -20,6 +21,13 @@ import { COLORS } from '../ui/theme.js';
 
 const SWIPE = 42; // game pixels
 const EVENT_COLORS = { goldRush: 0xffd23f, meteors: 0xff6a00, ambush: 0xff3860, storm: 0x9fb4ff, lowGravity: 0xd6a8ff, traffic: 0xffd23f, blackout: 0xb07cff };
+// Label, color and subtitle of each v6 mode on the HUD.
+const MODE_INTROS = {
+  assault: { label: 'modeAssault', color: COLORS.orange, sub: 'modeAssaultDesc' },
+  chaos: { label: 'modeChaos', color: 0xb07cff, sub: 'modeChaosDesc' },
+  parkour: { label: 'modeParkour', color: 0x39ffd2, sub: 'modeParkourDesc' },
+  hardcore: { label: 'modeHardcore', color: COLORS.red, sub: 'oneHeart' },
+};
 const HOLD_TO_FIRE = 0.2; // seconds
 const COUNTDOWN = 3;
 
@@ -65,6 +73,9 @@ const SFX_FOR_EVENT = {
   carIncoming: 'horn',
   bossShieldDown: 'shieldBreak',
   bossEnraged: 'alarm',
+  mutator: 'mutate',
+  trick: 'trick',
+  waveStart: 'wave',
 };
 
 /**
@@ -87,6 +98,7 @@ export class GameScene extends Phaser.Scene {
     this.hints = null;
     this.won = false;
     this.timeAttackRecord = false;
+    this.modeRecord = false;
     this.countdownTimer = null;
     this.gestures = new Map();
     this.autoQuality = new AutoQuality();
@@ -128,6 +140,8 @@ export class GameScene extends Phaser.Scene {
       this.level = getLevel(this.levelId) ?? getLevel(1);
       this.levelId = this.level.id;
       this.startBest = 0;
+    } else if (MODE_RECORDS.includes(this.mode)) {
+      this.startBest = save.modeBest(this.mode).score;
     } else {
       this.startBest = save.highScore;
     }
@@ -157,6 +171,10 @@ export class GameScene extends Phaser.Scene {
       const twist = this.level.twist ? ` · ${t(`twist_${this.level.twist}`)}` : '';
       this.hud.setModeLabel(`${t('levelTitle', { n: this.level.id })}${twist}`, COLORS.cyan);
       this.hud.showMessage(t('levelTitle', { n: this.level.id }), zoneTheme(this.level.zone).line, 2000, 60, goalText(this.level));
+    } else if (MODE_INTROS[this.mode]) {
+      const intro = MODE_INTROS[this.mode];
+      this.hud.setModeLabel(t(intro.label), intro.color);
+      this.hud.showMessage(t(intro.label), intro.color, 1800, 60, t(intro.sub));
     } else if (!this.tutorial) this._showZoneTitle(0, 0);
 
     this._bindInput();
@@ -322,6 +340,7 @@ export class GameScene extends Phaser.Scene {
       this.challengeReward ??= reward;
     } else if (this.mode === 'bossRush') this.bossRushRecord = save.submitBossRush({ bosses: w.stats.bosses, score: summary.score }) || this.bossRushRecord;
     else if (this.mode === 'timeAttack') this.timeAttackRecord = save.submitTimeAttack({ score: summary.score, meters: summary.meters }) || this.timeAttackRecord;
+    else if (MODE_RECORDS.includes(this.mode)) this.modeRecord = save.submitModeBest(this.mode, { score: summary.score, waves: w.stats.waves, meters: summary.meters }) || this.modeRecord;
     else if (this.mode === 'campaign') {
       // Stars are saved once, when the level is won (a lost run only keeps coins and XP).
       if (this.won && !this.levelResult) {
@@ -383,11 +402,24 @@ export class GameScene extends Phaser.Scene {
     const summary = this.commitProgress();
     const s = services.save.snapshot();
     const bestByMode = { endless: summary.best, bossRush: s.bossRushBest.score, timeAttack: s.timeAttackBest.score, campaign: summary.score };
+    for (const m of MODE_RECORDS) bestByMode[m] = s.modeBests[m].score;
     this.scene.launch('GameOver', {
       ...summary,
       best: bestByMode[this.mode] ?? Math.max(summary.score, this.startBest),
       // Boss rush records go by bosses beaten first (as saved), then score.
-      isNewBest: this.mode === 'bossRush' ? this.bossRushRecord : this.mode === 'timeAttack' ? this.timeAttackRecord : this.mode === 'campaign' ? false : summary.score > this.startBest && summary.score > 0,
+      isNewBest:
+        this.mode === 'bossRush'
+          ? this.bossRushRecord
+          : this.mode === 'timeAttack'
+            ? this.timeAttackRecord
+            : MODE_RECORDS.includes(this.mode)
+              ? this.modeRecord
+              : this.mode === 'campaign'
+                ? false
+                : summary.score > this.startBest && summary.score > 0,
+      waves: this.world.stats.waves,
+      mutations: this.world.stats.mutations,
+      tricks: this.world.stats.tricks,
       campaign: this.mode === 'campaign' ? { level: this.level.id, won: this.won, result: this.levelResult, hasNext: !!getLevel(this.level.id + 1), goal: goalText(this.level), progress: this.world.goalProgress, target: this.level.goal.value } : null,
       timeUp: this.world.deathCause === 'time',
       previousBest: this.startBest,
@@ -586,8 +618,35 @@ export class GameScene extends Phaser.Scene {
         break;
       case 'eventStart':
         haptics.medium();
+        // In chaos the mutation card already announced it.
+        if (this.world.mutator?.event) break;
         this.hud.showMessage(t(`event_${e.event}`), EVENT_COLORS[e.event] ?? COLORS.yellow, 1800, 54, t(`eventDesc_${e.event}`));
         break;
+      case 'waveStart':
+        haptics.medium();
+        if (e.boss) this.hud.showMessage(t('waveBoss', { n: e.wave }), COLORS.pink, 1500, 56);
+        else this.hud.showMessage(t('wave', { n: e.wave }), COLORS.orange, 1400, 60, t('waveEnemies', { n: e.enemies }));
+        break;
+      case 'waveClear':
+        if (e.boss) break; // the boss has its own celebration
+        sfx.play(e.perfect ? 'newBest' : 'powerup');
+        haptics.success();
+        this.hud.showMessage(t('waveClear'), COLORS.green, 1300, 50, e.points ? t('wavePerfect', { n: e.points }) : `+${e.coins}`);
+        break;
+      case 'mutator':
+        haptics.heavy();
+        this.cameras.main.shake(180, 0.004);
+        this.hud.mutatorCard(t(`mut_${e.id}`), t(`mutDesc_${e.id}`));
+        break;
+      case 'mutatorEnd':
+        this.hud.popup(0.5, 0.3, t('chaosMult', { n: fmtMult(e.mult) }), '#d6a8ff', 34);
+        break;
+      case 'trick': {
+        const p = this.world.player;
+        const pt = this.view.screenPoint(p.x, p.y + 2.2, 0.5, this.popupPoint);
+        if (pt.visible) this.hud.popup(pt.x, pt.y, `${t(`trick_${e.kind}`)} +${e.points}`, '#7dffd2', 24);
+        break;
+      }
       case 'eventEnd':
         if (e.event === 'ambush') {
           if (e.success) {

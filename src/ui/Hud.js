@@ -1,7 +1,7 @@
 import { BOSS_KINDS, OVERDRIVE } from '../config/game3d.config.js';
 import { PERKS } from '../config/perks.js';
 import { zoneTheme } from '../config/zones.js';
-import { fmt, t } from '../i18n.js';
+import { fmt, fmtMult, t } from '../i18n.js';
 import { Button, IconButton } from './Button.js';
 import { COLORS, glow, hex, textStyle } from './theme.js';
 
@@ -207,7 +207,27 @@ export class Hud {
       const text = `${t('goalLabel')} ${goal.progress} / ${goal.value} ${t(`goalUnit_${goal.type}`)}`;
       if (text !== this.lastGoal) this.goalLabel.setText((this.lastGoal = text));
     }
-    if (goal && !ev) {
+    // Chaos: the mutation in progress; assault: the wave and its enemies left.
+    const mut = state.mutator;
+    const wave = state.wave && !state.boss ? state.wave : null;
+    if (mut) {
+      this.zoneBar.fillStyle(0xb07cff, 1).fillRoundedRect(z.x, z.y, Math.max(8, z.w * (mut.left / mut.duration)), 8, 4);
+      const key = `mut:${mut.id}`;
+      if (this.eventType !== key) {
+        this.eventType = key;
+        this.eventLabel.setText(`${t('mutation')}: ${t(`mut_${mut.id}`)}`).setColor('#d6a8ff');
+      }
+      this.eventLabel.setVisible(!state.boss);
+    } else if (wave) {
+      const k = wave.state === 'wave' && wave.total ? wave.left / wave.total : 0;
+      this.zoneBar.fillStyle(COLORS.orange, 1).fillRoundedRect(z.x, z.y, Math.max(8, z.w * k), 8, 4);
+      const text = wave.state === 'wave' ? t('waveLabel', { n: wave.n, left: wave.left }) : t('waveNext', { n: wave.n + 1 });
+      if (this.eventType !== text) {
+        this.eventType = text;
+        this.eventLabel.setText(text).setColor(hex(COLORS.orange));
+      }
+      this.eventLabel.setVisible(true);
+    } else if (goal && !ev) {
       this.zoneBar.fillStyle(COLORS.cyan, 1).fillRoundedRect(z.x, z.y, Math.max(8, z.w * (goal.progress / goal.value)), 8, 4);
       this.eventType = null;
       this.eventLabel.setVisible(false);
@@ -261,9 +281,15 @@ export class Hud {
       slot += 1;
     }
 
-    // Combo.
+    // Chaos: the multiplier earned so far, as the mode label.
+    if (state.mode === 'chaos' && state.chaosMult !== this.lastMult) {
+      this.lastMult = state.chaosMult;
+      this.setModeLabel(t('chaosMult', { n: fmtMult(state.chaosMult) }), 0xb07cff);
+    }
+
+    // Combo (parkour: the trick chain).
     if (state.combo >= 2 && state.combo !== this.lastCombo) {
-      this.combo.setText(t('combo', { n: state.combo })).setAlpha(1);
+      this.combo.setText(t(state.mode === 'parkour' ? 'style' : 'combo', { n: state.combo })).setAlpha(1);
       this.scene.tweens.killTweensOf(this.combo);
       this.combo.fading = false; // a killed fade never runs its onComplete
       this.combo.setScale(1.4);
@@ -340,6 +366,7 @@ export class Hud {
   showMessage(text, color = COLORS.pink, duration = 1100, size = 64, sub = '') {
     const m = this.message;
     this.scene.tweens.killTweensOf([m, this.subMessage]);
+    if (this.width) m.x = this.width / 2; // a killed shake leaves it off center
     m.setText(text).setFontSize(size).setAlpha(1).setScale(0.4);
     glow(m, color, 22);
     this.subMessage.setText(sub).setAlpha(sub ? 1 : 0).setColor(hex(0xe9ddff));
@@ -388,6 +415,13 @@ export class Hud {
   timeBonus(seconds) {
     if (!this.width) return;
     this.popup((this.width / 2 + 210) / this.width, (this.margin + 70) / this.height, `+${Math.round(seconds * 10) / 10}s`, '#7dffb0', 28);
+  }
+
+  /** Chaos: a new mutation, announced with a glitchy shake. */
+  mutatorCard(title, desc) {
+    this.showMessage(title, 0xb07cff, 1800, 64, desc);
+    const m = this.message;
+    this.scene.tweens.add({ targets: m, x: m.x + 7, duration: 45, yoyo: true, repeat: 5 });
   }
 
   setModeLabel(text, color = COLORS.yellow) {

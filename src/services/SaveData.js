@@ -44,7 +44,14 @@ function defaults() {
     bossRushBest: { bosses: 0, score: 0 },
     timeAttackBest: { score: 0, meters: 0 },
     campaign: {}, // level id -> [star, star, star]
+    modeBests: emptyModeBests(),
   };
+}
+
+/** Records of the v6 modes: score, plus waves (assault) or meters. */
+export const MODE_RECORDS = Object.freeze(['assault', 'chaos', 'parkour', 'hardcore']);
+function emptyModeBests() {
+  return Object.fromEntries(MODE_RECORDS.map((m) => [m, { score: 0, waves: 0, meters: 0 }]));
 }
 
 /** Campaign stars as saved: only known levels, three booleans each. */
@@ -148,6 +155,12 @@ export class SaveData {
       bossRushBest: { bosses: toCount(p.bossRushBest?.bosses), score: toCount(p.bossRushBest?.score) },
       timeAttackBest: { score: toCount(p.timeAttackBest?.score), meters: toCount(p.timeAttackBest?.meters) },
       campaign: sanitizeCampaign(p.campaign),
+      modeBests: Object.fromEntries(
+        MODE_RECORDS.map((m) => {
+          const b = p.modeBests?.[m];
+          return [m, { score: toCount(b?.score), waves: toCount(b?.waves), meters: toCount(b?.meters) }];
+        }),
+      ),
     };
   }
 
@@ -302,6 +315,23 @@ export class SaveData {
     if (better) this.data.timeAttackBest = { score: toCount(score), meters: toCount(meters) };
     this.persist();
     return better;
+  }
+
+  /**
+   * Record of a v6 mode (assault goes by waves first, then score). Returns
+   * true for a new record.
+   */
+  submitModeBest(mode, { score = 0, waves = 0, meters = 0 } = {}) {
+    const best = this.data.modeBests[mode];
+    if (!best) return false;
+    const better = mode === 'assault' ? waves > best.waves || (waves === best.waves && score > best.score) : score > best.score;
+    if (better) this.data.modeBests[mode] = { score: toCount(score), waves: toCount(waves), meters: toCount(meters) };
+    this.persist();
+    return better;
+  }
+
+  modeBest(mode) {
+    return this.data.modeBests[mode] ?? { score: 0, waves: 0, meters: 0 };
   }
 
   // ---------------------------------------------------------- campaign
