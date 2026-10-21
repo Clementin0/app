@@ -3,22 +3,29 @@ import {
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
+  CanvasTexture,
   Color,
   DynamicDrawUsage,
+  Group,
   InstancedMesh,
   Mesh,
   MeshBasicMaterial,
+  NearestFilter,
   Object3D,
   PlaneGeometry,
+  RepeatWrapping,
+  SRGBColorSpace,
   Sprite,
   SpriteMaterial,
+  TorusGeometry,
 } from 'three';
 import { dotTexture } from './textures3d.js';
 
 /**
- * Small visual systems of the game view, each a single draw call:
+ * Small visual systems of the game view, most of them a single draw call:
  * blob shadows under everything, the runner's light ribbon, explosion
- * debris and explosion flashes.
+ * debris and flashes, the warp tunnel between zones, the runner's
+ * afterimages and the gate at the distance record.
  */
 
 /** Soft dark ellipses on the road under the runner and the entities. */
@@ -258,6 +265,216 @@ export class Flashes {
     for (const s of this.sprites) {
       s.removeFromParent();
       s.material.dispose();
+    }
+  }
+}
+
+/**
+ * Warp between two zones: rings of light rush past the camera while the
+ * world changes behind them. k (0..1..0) also drives the camera and grading.
+ */
+export class WarpTunnel {
+  constructor(scene, count = 16) {
+    this.count = count;
+    this.material = new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false, fog: false });
+    this.mesh = new InstancedMesh(new TorusGeometry(6.2, 0.1, 6, 56), this.material, count);
+    this.mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+    this.mesh.frustumCulled = false;
+    this.mesh.visible = false;
+    this.dummy = new Object3D();
+    this.zs = new Float32Array(count);
+    this.t = 1;
+    this.duration = 1.9;
+    scene.add(this.mesh);
+  }
+
+  /** Strength of the warp right now: rises and falls once. */
+  get k() {
+    return this.t < 1 ? Math.sin(Math.PI * this.t) : 0;
+  }
+
+  start(color) {
+    this.material.color.setHex(color);
+    for (let i = 0; i < this.count; i++) this.zs[i] = 6 + i * 9;
+    this.t = 0;
+    this.mesh.visible = true;
+  }
+
+  update(dt) {
+    if (this.t >= 1) return;
+    this.t = Math.min(1, this.t + dt / this.duration);
+    const k = this.k;
+    const span = this.count * 9;
+    const d = this.dummy;
+    for (let i = 0; i < this.count; i++) {
+      let z = this.zs[i] - (80 + 220 * k) * dt;
+      if (z < -8) z += span;
+      this.zs[i] = z;
+      d.position.set(0, 2.4, z);
+      d.rotation.set(0, 0, z * 0.04 + i * 0.3);
+      d.scale.set(1, 0.72, 1);
+      d.updateMatrix();
+      this.mesh.setMatrixAt(i, d.matrix);
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
+    this.material.opacity = k * 0.85;
+    if (this.t >= 1) this.mesh.visible = false;
+  }
+
+  dispose() {
+    this.mesh.removeFromParent();
+    this.mesh.geometry.dispose();
+    this.material.dispose();
+  }
+}
+
+/**
+ * Glowing copies of the runner trailing behind it (turbo, overdrive,
+ * jetpack). Built on first use; each copy replays a pose from a moment ago.
+ */
+export class Afterimages {
+  constructor(parent, build, color, count = 3) {
+    this.parent = parent;
+    this.build = build;
+    this.color = color;
+    this.count = count;
+    this.copies = null;
+    this.history = [];
+    this.clock = 0;
+    this.k = 0;
+  }
+
+  _create() {
+    this.copies = Array.from({ length: this.count }, () => {
+      const material = new MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false });
+      const copy = this.build();
+      copy.traverse((o) => {
+        if (!o.isMesh) return;
+        o.material.dispose?.();
+        o.material = material;
+      });
+      for (const k of ['muzzle', 'jetpack']) if (copy.userData[k]) copy.userData[k].visible = false;
+      copy.visible = false;
+      this.parent.add(copy);
+      return { copy, material };
+    });
+  }
+
+  /** pose: { x, y, time, grounded, sliding, vy, lean }; active: should they show. */
+  update(dt, pose, active, animate) {
+    this.k += ((active ? 1 : 0) - this.k) * Math.min(1, dt * 6);
+    this.clock += dt;
+    if (this.clock >= 0.035) {
+      this.clock = 0;
+      this.history.unshift({ ...pose });
+      if (this.history.length > this.count * 3 + 1) this.history.length = this.count * 3 + 1;
+    }
+    if (this.k < 0.02) {
+      if (this.copies) for (const c of this.copies) c.copy.visible = false;
+      return;
+    }
+    if (!this.copies) this._create();
+    this.copies.forEach(({ copy, material }, i) => {
+      const h = this.history[Math.min(this.history.length - 1, (i + 1) * 3)];
+      if (!h) return;
+      copy.visible = true;
+      copy.position.set(h.x, h.y, -(i + 1) * 0.85);
+      copy.scale.setScalar(pose.scale ?? 1);
+      animate(copy, h);
+      material.opacity = 0.34 * (1 - i / this.count) * this.k;
+    });
+  }
+
+  dispose() {
+    if (!this.copies) return;
+    for (const { copy, material } of this.copies) {
+      copy.removeFromParent();
+      material.dispose();
+    }
+  }
+}
+
+function recordSignTexture(text) {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.font = 'bold 64px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = '#ffd23f';
+  ctx.shadowBlur = 18;
+  ctx.fillStyle = '#fff6c8';
+  ctx.fillText(text, 256, 66);
+  const tex = new CanvasTexture(c);
+  tex.colorSpace = SRGBColorSpace;
+  return tex;
+}
+
+function checkerTexture() {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 16;
+  const ctx = c.getContext('2d');
+  for (let x = 0; x < 8; x++)
+    for (let y = 0; y < 2; y++) {
+      ctx.fillStyle = (x + y) % 2 ? '#ffd23f' : '#1a0d00';
+      ctx.fillRect(x * 8, y * 8, 8, 8);
+    }
+  const tex = new CanvasTexture(c);
+  tex.colorSpace = SRGBColorSpace;
+  tex.magFilter = NearestFilter;
+  tex.wrapS = RepeatWrapping;
+  return tex;
+}
+
+/** A golden gate across the road at the distance record, with a checkered line. */
+export class RecordGate {
+  constructor(parent, label, halfWidth = 4.2) {
+    this.group = new Group();
+    this.gold = new MeshBasicMaterial({ color: 0xffc83d });
+    const w = halfWidth + 0.7;
+    const post = new BoxGeometry(0.3, 7.4, 0.3);
+    for (const s of [-1, 1]) {
+      const m = new Mesh(post, this.gold);
+      m.position.set(s * w, 3.7, 0);
+      this.group.add(m);
+    }
+    const bar = new Mesh(new BoxGeometry(w * 2 + 0.3, 0.32, 0.32), this.gold);
+    bar.position.y = 7.4;
+    this.group.add(bar);
+    this.lineMat = new MeshBasicMaterial({ map: checkerTexture(), transparent: true, opacity: 0.9, depthWrite: false });
+    this.lineMat.map.repeat.set(4, 1);
+    const line = new Mesh(new PlaneGeometry(halfWidth * 2, 1.1), this.lineMat);
+    line.rotation.x = -Math.PI / 2;
+    line.position.y = 0.05;
+    this.group.add(line);
+    this.signMat = new SpriteMaterial({ map: recordSignTexture(label), transparent: true, depthWrite: false });
+    this.sign = new Sprite(this.signMat);
+    this.sign.scale.set(11, 2.75, 1);
+    this.sign.position.y = 8.9;
+    this.group.add(this.sign);
+    this.group.visible = false;
+    parent.add(this.group);
+    this.time = 0;
+  }
+
+  /** z: meters from the runner to the record (negative once passed). */
+  update(dt, z) {
+    this.time += dt;
+    this.group.visible = z > -6 && z < 170;
+    if (!this.group.visible) return;
+    this.group.position.z = z;
+    this.sign.position.y = 8.9 + Math.sin(this.time * 2.4) * 0.15;
+    this.gold.color.setHSL(0.12, 1, 0.55 + 0.1 * Math.sin(this.time * 5));
+  }
+
+  dispose() {
+    this.group.removeFromParent();
+    this.group.traverse((o) => o.geometry?.dispose());
+    for (const m of [this.gold, this.lineMat, this.signMat]) {
+      m.map?.dispose();
+      m.dispose();
     }
   }
 }

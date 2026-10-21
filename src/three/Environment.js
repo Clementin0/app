@@ -22,7 +22,8 @@ import {
 import { LANES } from '../config/game3d.config.js';
 import { zoneTheme } from '../config/zones.js';
 import { buildScenery } from './Scenery.js';
-import { RIM, ROAD, withRoadReflection } from './shading.js';
+import { NO_MIRROR } from './Mirror.js';
+import { RIM, ROAD, ROAD_SURFACES, withRoadReflection } from './shading.js';
 import { Sky } from './Sky.js';
 import { dotTexture, gridTexture, planetTexture, roadTexture, sunTexture } from './textures3d.js';
 import { SpeedLines, Weather, WEATHER_TYPES } from './Weather.js';
@@ -34,6 +35,8 @@ const ROAD_HALF = (LANES.count * LANES.width) / 2 + 0.6;
 const ARCH_GAP = 44;
 const POLE_GAP = 18;
 const RIG_SPAN = [-20, 330];
+// How much the scene shows in the road (high quality mirror), per zone.
+const MIRROR_LOOKS = { city: 0.55, desert: 0.2, ice: 0.65, inferno: 0.3, abyss: 0.28, orbit: 0.5 };
 
 /** Value noise for the mountain ridges (deterministic). */
 function ridge(x, z) {
@@ -98,6 +101,10 @@ export class Environment {
       return m;
     });
     scene.add(this.road, ...this.sides, ...this.edges);
+    // The mirror shows what stands on the road, not the road itself.
+    for (const m of [this.road, ...this.sides]) m.layers.set(NO_MIRROR);
+    ROAD.halfWidth.value = ROAD_HALF;
+    this.mirrorStrength = 0;
 
     this._buildMountains();
     this._buildRig();
@@ -122,6 +129,8 @@ export class Environment {
     // Room for a storm: up to 2.5x the high quality particle count.
     this.weather = new Weather(scene, 1050);
     this.speedLines = new SpeedLines(scene, 36);
+    this.weather.points.layers.set(NO_MIRROR);
+    this.speedLines.mesh.layers.set(NO_MIRROR);
     this.sceneries = {};
     this.scroll = 0;
     this.setDetail(quality);
@@ -257,6 +266,15 @@ export class Environment {
     // Neon rims in the zone's line color; the sun's color on the wet road.
     RIM.color.value.setHex(theme.line).lerp(this.white, 0.15);
     ROAD.sun.value.set(theme.sun[1]);
+    const surface = ROAD_SURFACES[theme.id] ?? ROAD_SURFACES.city;
+    ROAD.surface.value = surface.id;
+    ROAD.surfaceColor.value.setHex(surface.color);
+    this.surfaceBase = surface.amount;
+    this.mirrorStrength = MIRROR_LOOKS[theme.id] ?? 0.4;
+    // Sun rays: softer where the sky is already bright (ice, orbit) or murky (abyss);
+    // white suns are dimmed so they do not bloom over half the screen.
+    this.sunRays = { ice: 0.3, abyss: 0.55, orbit: 0.5 }[theme.id] ?? 1;
+    this.sunMat.color.setScalar({ ice: 0.7, orbit: 0.72, abyss: 0.85 }[theme.id] ?? 1);
 
     const road = roadTexture(theme.road, theme.line);
     road.repeat.set(1, ROAD_LEN / TILE);
@@ -347,6 +365,8 @@ export class Environment {
     }
     this.sky.update(dt, camera, { dim: Math.min(0.85, dark * 0.85 + storm * 0.35), flash });
     ROAD.time.value += dt;
+    ROAD.scroll.value = this.scroll % 4096;
+    ROAD.surfaceAmount.value = (this.surfaceBase ?? 0.5) * (1 - dark * 0.35);
     // The reflection fades with the sun (storm, blackout).
     ROAD.amount.value = 1.1 * (1 - Math.max(storm * 0.7, dark * 0.9));
     this.hemi.intensity = (1.6 + flash * 3) * (1 - 0.72 * dark);

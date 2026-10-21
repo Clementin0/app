@@ -2,8 +2,9 @@ import { AdditiveBlending, BoxGeometry, ConeGeometry, DoubleSide, Group, Icosahe
 import { DEFAULT_EQUIPPED, getItem } from '../config/cosmetics.js';
 import { laneX } from '../config/game3d.config.js';
 import { animateCharacter, buildCharacter } from './Character.js';
+import { NO_MIRROR } from './Mirror.js';
 import { buildEntity, enemyShot, flash, heavyShot, laserWave, playerShot, poolKey, quakeWave, RAMP_COLOR, rocketShot, TURBO_COLOR } from './models.js';
-import { BlobShadows, Debris, Flashes, Ribbon } from './Effects.js';
+import { Afterimages, BlobShadows, Debris, Flashes, RecordGate, Ribbon, WarpTunnel } from './Effects.js';
 import { Particles } from './Particles.js';
 import { chevronTexture, dotTexture } from './textures3d.js';
 
@@ -26,7 +27,7 @@ const NO_SHADOW = new Set(['gap', 'turbo', 'ramp', 'meteor', 'fence', 'platform'
  * chase camera. Used by the game and by the menu's demo run.
  */
 export class GameView {
-  constructor(stage, world, { equipped = DEFAULT_EQUIPPED, effects = true } = {}) {
+  constructor(stage, world, { equipped = DEFAULT_EQUIPPED, effects = true, record = null } = {}) {
     this.stage = stage;
     this.world = world;
     this.effects = effects;
@@ -76,8 +77,18 @@ export class GameView {
     this.eshotMeshes = new Map();
     this.flashes = new Map();
     this.particles = new Particles(stage.scene, stage.quality.particles);
+    // Warp tunnel between zones; afterimages of the runner in turbo / overdrive;
+    // a gate at the distance record (record: { distance, label }).
+    this.warp = new WarpTunnel(this.root);
+    const skinGlow = this.character.userData.skin?.glow ?? 0x00f5ff;
+    this.afterimages = effects ? new Afterimages(this.root, () => buildCharacter({ ...equipped, weapon }), skinGlow) : null;
+    this.record = record?.distance > 0 ? record : null;
+    this.recordGate = this.record ? new RecordGate(this.root, this.record.label) : null;
     this.shadows = new BlobShadows(this.root, 64);
     this.ribbon = new Ribbon(this.root, this.trailColors[0]);
+    // Things painted on the road stay out of its mirror.
+    this.shadows.mesh.layers.set(NO_MIRROR);
+    this.ribbon.mesh.layers.set(NO_MIRROR);
     this.debris = new Debris(this.root, stage.quality.particles > 300 ? 120 : 48);
     this.bursts = new Flashes(this.root, 8); // explosion flashes (this.flashes = hit flashes)
     this.trailTimer = 0;
@@ -288,6 +299,10 @@ export class GameView {
           break;
         case 'zone':
           this.theme = this.stage.environment.setTheme(e.index);
+          if (this.effects) {
+            this.warp.start(this.theme.line);
+            this.stage.pulse('warp');
+          }
           break;
         case 'bossSpawn':
           if (this.effects) this.stage.pulse('boss');
@@ -469,9 +484,14 @@ export class GameView {
       const lean = Math.max(-0.35, Math.min(0.35, (X(p.x) - c.userData.lastX || 0) * 3));
       c.userData.lastX = X(p.x);
       // World time: the run cycle stops with the game (pause, countdown, tutorial freeze).
-      animateCharacter(c, { time: w.time, grounded: p.grounded, sliding: p.slide > 0, vy: p.vy, lean });
+      const pose = { x: X(p.x), y: p.y, time: w.time, grounded: p.grounded, sliding: p.slide > 0, vy: p.vy, lean, scale };
+      animateCharacter(c, pose);
       c.visible = p.invulnerable > 0 ? Math.floor(this.time * 14) % 2 === 0 : true;
-    }
+      this.afterimages?.update(dt, pose, !this.frozen && (p.turboK > 0.3 || p.overdrive > 0 || p.jetpack > 0), animateCharacter);
+    } else this.afterimages?.update(dt, { x: 0, y: 0, time: 0, grounded: true }, false, animateCharacter);
+    this.warp.update(dt);
+    this.stage.warp = this.warp.k;
+    this.recordGate?.update(dt, this.record.distance - w.distance);
     c.userData.muzzle.visible = this.muzzleTimer > 0;
     // Jetpack: visible only while flying, with flickering flames.
     const flying = p.jetpack > 0 && w.state !== 'dead';
@@ -841,7 +861,7 @@ export class GameView {
     if (!this.effects) return;
     // Wider field of view with speed, much wider in turbo.
     const speedK = Math.min(1, Math.max(0, (w.speed - 15) / 19));
-    const fov = BASE_FOV + speedK * 5 + p.turboK * 12;
+    const fov = BASE_FOV + speedK * 5 + p.turboK * 12 + this.warp.k * 22;
     this.fov += (fov - this.fov) * Math.min(1, dt * 4);
     if (Math.abs(cam.fov - this.fov) > 0.01) {
       cam.fov = this.fov;
@@ -855,7 +875,22 @@ export class GameView {
     cam.rotateZ(this.roll);
   }
 
+  /** Celebration when the runner crosses the distance record. */
+  passRecord() {
+    if (!this.recordGate) return;
+    this.ring(0, 0.2, 0.5, 0xffd23f, 10, 0.7);
+    this.particles.burst(0, 4, 1, [0xffd23f, 0xffffff, 0xff8a3d], 80, 11, 1.3);
+    if (this.effects) {
+      this.bursts.spawn(0, 7.4, 0.5, 0xffe9a0, 14);
+      this.debris.burst(0, 7.4, 0.5, [0xffd23f, 0xffffff], 30, 9);
+    }
+  }
+
   dispose() {
+    this.warp.dispose();
+    this.afterimages?.dispose();
+    this.recordGate?.dispose();
+    this.stage.warp = 0;
     this.shadows.dispose();
     this.ribbon.dispose();
     this.debris.dispose();

@@ -3,7 +3,7 @@ import { getLevel, starsFor } from '../config/campaign.js';
 import { bossKind } from '../config/game3d.config.js';
 import { zoneTheme } from '../config/zones.js';
 import { loadoutFrom } from '../config/upgrades.js';
-import { fmtMult, t } from '../i18n.js';
+import { fmt, fmtMult, t } from '../i18n.js';
 import { xpForRun } from '../logic/Progression.js';
 import { createRng } from '../logic/rng.js';
 import { LaneWorld } from '../logic3d/LaneWorld.js';
@@ -147,7 +147,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.world = new LaneWorld({ rng, best: this.startBest, loadout: loadoutFrom(snap), mode: this.mode, modifiers, courseSeed, campaign: this.level ?? null });
-    this.view = stage.setView(new GameView(stage, this.world, { equipped: snap.equipped }));
+    // Classic runs: a gate at the distance record.
+    this.recordDistance = this.mode === 'endless' && snap.bestDistance >= 100 ? snap.bestDistance : 0;
+    this.recordPassed = false;
+    const record = this.recordDistance ? { distance: this.recordDistance, label: `${t('recordLine')} ${fmt(this.recordDistance)} m` } : null;
+    this.view = stage.setView(new GameView(stage, this.world, { equipped: snap.equipped, record }));
     this.hud = new Hud(this, { onPause: () => this.pauseGame(), onSkipTutorial: () => this.tutorial?.finish(), onOverdrive: () => this.triggerOverdrive() });
 
     music.setZone(this.world.zone.index);
@@ -504,6 +508,13 @@ export class GameScene extends Phaser.Scene {
       if (this.perkDelay <= 0) this._offerPerks();
     }
     this._hintThreats(delta / 1000);
+    if (this.recordDistance && !this.recordPassed && this.world.distance >= this.recordDistance && this.world.state === 'running') {
+      this.recordPassed = true;
+      services.sfx.play('newBest');
+      services.haptics.success();
+      this.view.passRecord();
+      this.hud.showMessage(t('recordPassed'), COLORS.yellow, 1500, 54);
+    }
     this.hud.update(this.world.hud());
   }
 
