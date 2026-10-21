@@ -41,3 +41,12 @@ describe('AutoQuality', () => {
     expect(lowerQuality('nope')).toBe(null);
   });
 });
+
+describe('AutoQuality on a very slow device', () => {
+  it('half-second frames (2 fps) are not mistaken for pauses: the quality steps down', () => {
+    const aq = new AutoQuality();
+    let hit = false;
+    for (let i = 0; i < 30 && !hit; i++) hit = aq.sample(0.52);
+    expect(hit).toBe(true);
+  });
+});

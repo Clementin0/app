@@ -15,8 +15,8 @@ import { ROAD } from './shading.js';
  */
 export const QUALITY = Object.freeze({
   low: { pixelRatio: 1, antialias: false, post: false, msaa: 0, bloom: 0, buildings: 24, particles: 220, trail: false, weather: 120, props: 0.5, rays: 0, mirror: 0 },
-  medium: { pixelRatio: 1.25, antialias: false, post: true, msaa: 0, bloom: 0.85, buildings: 44, particles: 420, trail: true, weather: 260, props: 0.8, rays: 10, mirror: 0 },
-  high: { pixelRatio: 2, antialias: false, post: true, msaa: 4, bloom: 1.0, buildings: 64, particles: 700, trail: true, weather: 420, props: 1, rays: 16, mirror: 0.33 },
+  medium: { pixelRatio: 1.25, antialias: false, post: true, msaa: 0, bloom: 0.85, buildings: 44, particles: 420, trail: true, weather: 260, props: 0.8, rays: 6, mirror: 0 },
+  high: { pixelRatio: 2, antialias: false, post: true, msaa: 4, bloom: 1.0, buildings: 64, particles: 700, trail: true, weather: 420, props: 1, rays: 12, mirror: 0.33 },
 });
 
 /**

@@ -25,9 +25,13 @@ export class AutoQuality {
     this.time = 0;
   }
 
-  /** Feeds one frame (seconds). Returns true when the last window was too slow. */
+  /**
+   * Feeds one frame (seconds). Returns true when the last window was too
+   * slow. Only frames over 1.5 s count as pauses: a device stuck at 2 fps
+   * (half-second frames) must still step down.
+   */
   sample(dt) {
-    if (!(dt > 0) || dt > 0.5) return false;
+    if (!(dt > 0) || dt > 1.5) return false;
     this.elapsed += dt;
     if (this.elapsed < this.warmup) return false;
     this.frames += 1;

@@ -10,7 +10,7 @@ Modelli 3D, texture, effetti sonori e colonna sonora sono generati proceduralmen
 | ![Turbo](docs/screenshots/turbo.png) | ![Rampa](docs/screenshots/ramp.png) | ![Tempesta](docs/screenshots/storm.png) |
 | **Gravità ridotta (Orbita)** | **Pioggia di meteoriti** | **Boss (Scorpione delle dune)** |
 | ![Gravità ridotta](docs/screenshots/low-gravity.png) | ![Pioggia di meteoriti](docs/screenshots/meteors.png) | ![Boss](docs/screenshots/boss.png) |
-| **Scelta del potenziamento** | **Modalità** | **Negozio** |
+| **Scelta del potenziamento** | **Otto modalità** | **Negozio** |
 | ![Potenziamenti](docs/screenshots/perks.png) | ![Modalità](docs/screenshots/modes.png) | ![Negozio](docs/screenshots/shop.png) |
 | **Ricompensa giornaliera** | **Game Over** | **Impostazioni** |
 | ![Ricompensa giornaliera](docs/screenshots/daily.png) | ![Game over](docs/screenshots/game-over.png) | ![Impostazioni](docs/screenshots/settings.png) |
@@ -22,6 +22,12 @@ Modelli 3D, texture, effetti sonori e colonna sonora sono generati proceduralmen
 | ![Scudo del boss](docs/screenshots/boss-shield.jpg) | ![Boss infuriato](docs/screenshots/boss-enraged.jpg) | ![Overdrive](docs/screenshots/overdrive.jpg) |
 | **Recinzione laser, cecchino e guardia** | **Ora di punta** | **Blackout (Inferno)** |
 | ![Nuove minacce](docs/screenshots/threats.jpg) | ![Ora di punta](docs/screenshots/traffic.jpg) | ![Blackout](docs/screenshots/blackout.jpg) |
+| **Assalto: ondate di nemici** | **Caos: la mutazione Specchio** | **Parkour: catena di trick** |
+| ![Assalto](docs/screenshots/assault.jpg) | ![Caos](docs/screenshots/chaos.jpg) | ![Parkour](docs/screenshots/parkour.jpg) |
+| **Qualità alta: strada a specchio e raggi di sole** | **Inferno: crepe di lava (con il warp)** | **Abisso: caustiche sul fondale** |
+| ![Specchio e raggi](docs/screenshots/mirror-rays.jpg) | ![Crepe di lava](docs/screenshots/lava-road.jpg) | ![Caustiche](docs/screenshots/caustics.jpg) |
+| **Warp verso il Deserto** | **Portale del record** | **Scie in overdrive** |
+| ![Warp](docs/screenshots/warp.jpg) | ![Portale del record](docs/screenshots/record-gate.jpg) | ![Scie](docs/screenshots/afterimages.jpg) |
 
 ## Scelte di progetto
 

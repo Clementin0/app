@@ -63,7 +63,8 @@ export const GradeShader = {
       // How much of the sun is visible (buildings, storm): its own brightness.
       vec3 disc = texture2D(tDiffuse, sunPos).rgb;
       float seen = clamp(dot(disc, vec3(0.333)) - 0.35, 0.0, 1.0);
-      if (dist < 0.95) {
+      // Only around the sun (the costly part: RAY_STEPS taps per pixel).
+      if (dist < 0.6) {
         vec2 stepUv = (uv - sunPos) / float(RAY_STEPS) * 0.85;
         vec2 p = uv;
         float decay = 1.0;
@@ -75,7 +76,7 @@ export const GradeShader = {
           acc += s * b * decay;
           decay *= 0.9;
         }
-        add += acc / float(RAY_STEPS) * 1.25 * smoothstep(0.95, 0.1, dist);
+        add += acc / float(RAY_STEPS) * 1.25 * smoothstep(0.6, 0.05, dist);
       }
       // Anamorphic streak across the sun.
       add += sunColor * exp(-abs(toSun.y) * 140.0) * exp(-abs(toSun.x) * 2.6) * 0.32 * seen;
