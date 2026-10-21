@@ -47,7 +47,18 @@ Modelli 3D, texture, effetti sonori e colonna sonora sono generati proceduralmen
 - **Cielo animato** (shader): sfumatura con una fascia calda sull'orizzonte, stelle che brillano, stelle cadenti, nebulose che si muovono lentamente e, su Ghiaccio e Abisso, un'aurora. Ogni zona ha il suo cielo.
 - **Orizzonte synthwave**: montagne in wireframe e sole con alone. Lungo la strada ci sono archi al neon e lampioni, che si scuriscono vicino alla camera per non abbagliare.
 - **Luce al neon sui contorni**: personaggio, nemici, ostacoli e boss hanno un bordo luminoso nel colore della zona, che li stacca dallo sfondo anche ad alta velocità.
-- **Strada bagnata**: il sole si riflette al centro della carreggiata, con un riflesso che ondeggia, oltre alle linee luminose.
+- **Raggi di sole** (qualità media e alta): fasci di luce che i grattacieli e le montagne tagliano, una striscia anamorfica sul sole e riflessi da lente. Si attenuano quando il sole è coperto, nella tempesta e nel blackout.
+- **Strada bagnata**: il sole si riflette al centro della carreggiata con un riflesso che ondeggia. In qualità alta la strada è un vero **specchio**: la scena (archi al neon, nemici, insegne, sole) viene ridisegnata dal basso a un terzo della risoluzione e si riflette sull'asfalto, increspata dall'acqua.
+- **Superficie animata della strada** in ogni zona:
+  - Città: gocce di pioggia che increspano le pozzanghere;
+  - Deserto: sabbia che scorre col vento;
+  - Ghiaccio: brina che scintilla;
+  - Inferno: crepe con la lava che pulsa sotto;
+  - Abisso: caustiche di luce sul fondale;
+  - Orbita: impulsi olografici e una griglia di punti.
+- **Tunnel di warp** al cambio di zona: anelli di luce del colore della nuova zona sfrecciano verso la camera, con campo visivo più largo e sfocatura radiale.
+- **Scie del personaggio**: copie luminose che lo inseguono in turbo, in overdrive e col jetpack.
+- **Portale del record**: nella corsa classica un arco dorato con la linea a scacchi segna la tua distanza migliore; superarlo fa esplodere i coriandoli.
 - **Ombre morbide** sotto il personaggio, i nemici, gli ostacoli e i pickup; si rimpiccioliscono quando salti o voli.
 - **Scia di luce** che il personaggio lascia sulla strada, come nelle moto di luce.
 - **Blackout**: le luci della città si spengono e resta solo il faro del personaggio, che illumina la strada davanti a te.
@@ -128,7 +139,7 @@ Un solo dito può concatenare direzioni diverse (es. sinistra e poi su), ma uno 
 - Hai **3 cuori** (5 con i potenziamenti). Nemici e plasma tolgono un cuore; schiantarsi contro un ostacolo è fatale.
 - Power-up: **scudo**, **magnete**, **fuoco rapido**, **punti doppi**, **cuore extra**, **jetpack** e **razzi a ricerca**. I razzi durano 8 secondi: partono dalle spalle, inseguono il nemico più vicino (anche il boss) e la loro esplosione colpisce chi sta intorno.
 
-**Modalità** (pulsante "MODALITÀ" nel menu)
+**Modalità** (pulsante "MODALITÀ" nel menu: otto schede)
 
 - **Infinita**: la corsa classica (pulsante GIOCA).
 - **Sfida giornaliera**: stesso percorso per tutti per tutto il giorno, con una regola diversa ogni giorno tra sette: turbo (+20% velocità, punti ×1,5), cristallo (un solo cuore, punti ×2), solo laser, tempesta di meteoriti, febbre dell'oro, caccia ai boss (arrivano prima), agguati. Sconfiggere il primo boss vale **+150 monete e +5 gemme**, una volta al giorno; resta il record del giorno.
@@ -146,6 +157,18 @@ Un solo dito può concatenare direzioni diverse (es. sinistra e poi su), ma uno 
 
   Si conserva il record di boss sconfitti.
 - **Contro il tempo**: si parte con 60 secondi e la strada accelera più in fretta. Gli **orologi** sulla strada danno +4 secondi, ogni uccisione e schivata al pelo +0,5, ogni boss +10. La corsa finisce quando il tempo scade; si conserva il record.
+- **Assalto**: niente ostacoli, solo **ondate di nemici** sempre più numerose e varie (da 3 a 12, i più duri arrivano dopo; mai tre a terra nello stesso gruppo, una corsia resta libera). L'HUD conta i nemici rimasti. Ogni ondata vale monete, e abbatterli tutti dà un bonus. Ogni 5 ondate arriva un **boss** che non scappa (dopo 45 secondi si infuria), poi un potenziamento e una nuova zona. Il record è il numero di ondate.
+- **Caos**: ogni 20 secondi una **mutazione** cambia le regole per 14 secondi, e ognuna superata alza il moltiplicatore dei punti di 0,25 fino a ×3. Le mutazioni sono 12 e arrivano tutte prima di ripetersi:
+  - **Specchio**: comandi invertiti;
+  - **Mini**: il personaggio (e la sua sagoma) si rimpicciolisce;
+  - **Ipervelocità**: strada al 130%;
+  - **Sciame**: droni, bombardieri e cecchini ovunque;
+  - **Fortezza**: muri, laser e voragini;
+  - **Pioggia di razzi**: razzi a ricerca infiniti;
+  - **Calamita d'oro**: calamita e punti doppi;
+  - gravità ridotta, blackout, tempesta, meteoriti e ora di punta in qualunque zona.
+- **Parkour**: niente armi, solo percorsi di ostacoli (rampe, piattaforme, voragini, recinzioni, pedane turbo) e una nuova zona ogni chilometro, senza boss. Saltare un ostacolo nella tua corsia, scivolarci sotto, volare da una rampa, sfondare col turbo e schivare al pelo sono **trick**: in catena moltiplicano i punti ("STILE ×N"), un colpo subìto spezza la catena.
+- **Estremo**: un solo cuore, strada più veloce del 15%, punti ×3, nessuna seconda possibilità e nessun potenziamento che dà vite.
 
 **Personalizzazione e progressione**
 
@@ -223,7 +246,8 @@ src/
   three/                    rendering 3D: Stage (renderer, post-processing e qualità), GradeShader,
                             Environment (strada, luci, montagne, archi, nebbia, lampi, faro),
                             Sky (cielo in shader), shading (luce sui contorni, strada bagnata),
-                            Effects (ombre, scia di luce, frammenti, lampi delle esplosioni),
+                            Effects (ombre, scia di luce, frammenti, lampi, warp, scie del personaggio,
+                            portale del record), Mirror (riflesso della strada in qualità alta),
                             Scenery (scenari instanziati delle zone), Weather (meteo, linee di velocità),
                             models (ostacoli, nemici, boss, pickup, pedane, rampe, razzi), Character,
                             Particles, GameView (partita e demo), PreviewView (anteprima del negozio)
@@ -248,7 +272,7 @@ store/                      icona 512×512 e feature graphic 1024×500 per il Pl
 ```bash
 npm install            # dipendenze
 npm run dev            # gioco nel browser con hot reload (annunci simulati)
-npm test               # 188 test unitari (mondo 3D, armi, nemici, ostacoli, eventi, jetpack, turbo, rampe, razzi, tempesta, gravità ridotta, 6 boss con scudi e attacchi da schivare, difficoltà del Boss Rush, overdrive, schivate al pelo, cecchini, guardie, recinzioni, traffico, blackout, campagna, contro il tempo, potenziamenti, modalità, livelli, tutorial, missioni, ricompensa giornaliera, grafica adattiva, salvataggi, negozio, lingue, annunci)
+npm test               # 210 test unitari (mondo 3D, armi, nemici, ostacoli, eventi, jetpack, turbo, rampe, razzi, tempesta, gravità ridotta, 6 boss con scudi e attacchi da schivare, difficoltà del Boss Rush, overdrive, schivate al pelo, cecchini, guardie, recinzioni, traffico, blackout, campagna, contro il tempo, assalto, caos e le sue 12 mutazioni, parkour e trick, estremo, record per modalità, potenziamenti, modalità, livelli, tutorial, missioni, ricompensa giornaliera, grafica adattiva, salvataggi, negozio, lingue, annunci)
 npm run build          # bundle web di produzione in dist/
 npm run verify         # gioca la build in Chromium headless e verifica tutto il flusso
 npm run cap:sync       # build + npx cap sync android + configurazione Android
@@ -256,7 +280,7 @@ npm run cap:open       # apre il progetto in Android Studio
 npm run release:check  # controlla che la release non usi gli ID AdMob di test
 ```
 
-`npm run verify` emula un telefono in landscape con touch e gioca davvero, con swipe e tocchi. Controlla 61 punti, tra cui:
+`npm run verify` emula un telefono in landscape con touch e gioca davvero, con swipe e tocchi. Controlla 70 punti, tra cui:
 - avvio dei due renderer (Three.js e Phaser) e demo 3D nel menu;
 - ricompensa giornaliera riscossa una volta sola;
 - banner nel menu, nascosto in gioco;
@@ -271,6 +295,7 @@ npm run release:check  # controlla che la release non usi gli ID AdMob di test
 - negozio: anteprima 3D, acquisto di skin e potenziamento, +50 monete con video, skin e danno applicati in partita;
 - novità della 4.0: pedana turbo (velocità, muro sfondato, campo visivo più largo), lancio dalla rampa, razzi a ricerca che colpiscono un nemico in un'altra corsia, tempesta (nebbia, meteo più fitto, punti doppi) e salto in gravità ridotta;
 - novità della 5.0: overdrive attivato dal pulsante dell'HUD, onda sismica e plasma pesante del boss disegnati, quattro modalità, livello 1 della campagna completato con le stelle salvate e il pulsante per il successivo, timer di "Contro il tempo" che scorre;
+- novità della 6.0: otto modalità; in Assalto la prima ondata arriva ed è contata sull'HUD; in Caos la mutazione Specchio trasforma uno swipe a sinistra in un passo a destra; in Parkour il tocco non spara e saltare una barriera è un trick; in Estremo un cuore, punti ×3 e niente "Continua"; il portale del record; il tunnel di warp; le scie in overdrive; raggi di sole e specchio della strada in qualità alta;
 - musica attiva e assenza di errori in console.
 
 Gli screenshot finiscono in `verify-output/`.
@@ -284,7 +309,7 @@ npm run cap:sync
 cd android && ./gradlew assembleDebug     # APK in android/app/build/outputs/apk/debug/
 ```
 
-`versionName` e `versionCode` vengono dal campo `version` di `package.json` (5.0.0 → versionCode 50000).
+`versionName` e `versionCode` vengono dal campo `version` di `package.json` (6.0.0 → versionCode 60000).
 
 Le build di debug sono firmate con `android/debug.keystore`, una chiave di debug inclusa nel repository (come quella che Android Studio crea in locale, non è un segreto). Così tutti gli APK prodotti dalla GitHub Action hanno la stessa firma: una nuova versione si installa sopra la precedente e **i salvataggi restano**. Le release usano invece la chiave privata di `keystore.properties`.
 
@@ -307,7 +332,7 @@ La GitHub Action [`.github/workflows/android.yml`](.github/workflows/android.yml
 ## Note tecniche
 
 - Due canvas sovrapposti: sotto il `WebGLRenderer` di Three.js (`#stage`), sopra il canvas trasparente di Phaser (`#game`) con interfaccia e input. Il rendering 3D avviene a ogni passo del gameloop di Phaser, così i due livelli restano sincronizzati.
-- La logica di gioco (`src/logic3d`) non dipende né da Phaser né da Three.js: le viste ne leggono lo stato e reagiscono a una coda di eventi (colpi, uccisioni, boss...). Per questo fisica, collisioni, armi, nemici, eventi, boss, potenziamenti, modalità, tutorial, missioni e revive sono coperti da test deterministici in Node. Un'IA gioca 3 minuti di partita su 12 seed diversi attraversando zone, affronta ognuno dei 6 boss su più seed e gioca Boss Rush, sfide giornaliere e livelli della campagna, per verificare che pattern, eventi e attacchi siano sempre superabili. Un test controlla anche il contrario: tenendo premuto il fuoco senza muoversi, il Boss Rush finisce al primo boss.
+- La logica di gioco (`src/logic3d`) non dipende né da Phaser né da Three.js: le viste ne leggono lo stato e reagiscono a una coda di eventi (colpi, uccisioni, boss...). Per questo fisica, collisioni, armi, nemici, eventi, boss, potenziamenti, modalità, tutorial, missioni e revive sono coperti da test deterministici in Node. Un'IA gioca 3 minuti di partita su 12 seed diversi attraversando zone, affronta ognuno dei 6 boss su più seed e gioca Boss Rush, sfide giornaliere e livelli della campagna, per verificare che pattern, eventi e attacchi siano sempre superabili. Un test controlla anche il contrario: tenendo premuto il fuoco senza muoversi, il Boss Rush finisce al primo boss. La stessa IA gioca due minuti in Assalto, Caos (anche con i comandi invertiti), Parkour ed Estremo.
 - Nella sfida giornaliera il percorso (righe di ostacoli, power-up, eventi) ha un seme separato dal resto, quindi è lo stesso per tutti qualunque cosa si colpisca.
 - Prestazioni su mobile:
   - materiali e geometrie condivisi, mesh riutilizzate in pool, edifici in `InstancedMesh`;

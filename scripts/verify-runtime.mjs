@@ -625,6 +625,104 @@ async function main() {
     const ta = await evaluate((h) => { const g = window[h].scene('Game'); return { left: +g.world.timeLeft.toFixed(1), timer: g.hud.timerText.visible && g.hud.timerText.text }; }, H);
     check('Time attack: the clock runs down on the HUD', ta.left < 60 && !!ta.timer, JSON.stringify(ta));
     await shot('14-time-attack');
+
+    // v6: the four new modes.
+    const openMode = async (button) => {
+      await forceDeath();
+      await sceneActive('GameOver');
+      await tapButton('GameOver', 'menuButton');
+      await sceneActive('Menu');
+      await tapButton('Menu', 'modesButton');
+      await sceneActive('Modes');
+      await tapButton('Modes', button);
+      await newRun();
+    };
+    step = 'v6 assault';
+    await forceDeath();
+    await sceneActive('GameOver');
+    await tapButton('GameOver', 'menuButton');
+    await sceneActive('Menu');
+    await tapButton('Menu', 'modesButton');
+    await sceneActive('Modes');
+    const modes8 = ['campaign', 'daily', 'bossRush', 'timeAttack', 'assault', 'chaos', 'parkour', 'hardcore'];
+    check('Modes: eight modes offered', await evaluate(([h, keys]) => keys.every((k) => !!window[h].scene('Modes')[`${k}Button`]), [H, modes8]));
+    await tapButton('Modes', 'assaultButton');
+    await newRun();
+    await waitWorld((w) => w.assault?.wave >= 1 && w.entities.some((e) => e.kind === 'enemy'), null, 60000);
+    const as = await evaluate((h) => { const g = window[h].scene('Game'); const w = g.world; return { mode: w.mode, wave: w.assault.wave, enemies: w.assault.total, label: g.hud.eventLabel.visible ? g.hud.eventLabel.text : null, obstacles: w.entities.filter((e) => e.kind === 'obstacle').length }; }, H);
+    check('Assault: the first wave of enemies arrives, counted on the HUD', as.mode === 'assault' && as.wave === 1 && as.enemies >= 3 && !!as.label && as.obstacles === 0, JSON.stringify(as));
+    await shot('15-assault');
+
+    step = 'v6 chaos';
+    await openMode('chaosButton');
+    await world((w) => {
+      w.zone.bossDone = true;
+      w._startMutator('mirror');
+      w.mutator.duration = 1e9;
+    });
+    const lane0 = await world((w) => w.player.lane);
+    await swipe(-140, 0); // left... mirrored
+    await waitWorld((w, l) => w.player.lane !== l, lane0, 10000);
+    const chaos = await evaluate((h) => { const g = window[h].scene('Game'); return { lane: g.world.player.lane, label: g.hud.eventLabel.visible ? g.hud.eventLabel.text : null, mode: g.hud.modeLabel.text }; }, H);
+    check('Chaos: a mutation is shown, and the mirror swaps a left swipe to the right', chaos.lane === lane0 + 1 && /SPECCHIO|MIRROR/.test(chaos.label ?? '') && /×/.test(chaos.mode), JSON.stringify({ lane0, ...chaos }));
+    await shot('16-chaos');
+
+    step = 'v6 parkour';
+    await openMode('parkourButton');
+    await world((w) => {
+      w.distanceToNext = Infinity;
+      w.entities = [];
+      w._addEntity({ type: 'barrier', lane: w.player.lane, dz: 0 }, 12);
+    });
+    // A tap would shoot in any other mode.
+    await touch('touchStart', [{ x: CX, y: CY, id: 1 }]);
+    await page.waitForTimeout(60);
+    await touch('touchEnd', []);
+    await waitWorld((w) => w.entities.some((e) => e.type === 'barrier' && e.z < 7), null, 20000);
+    await swipe(0, -140); // jump over it
+    await waitWorld((w) => w.stats.tricks >= 1, null, 20000);
+    const pk = await world((w) => ({ shots: w.stats.shots, tricks: w.stats.tricks, chain: w.combo.count }));
+    check('Parkour: no weapon, jumping a barrier is a trick', pk.shots === 0 && pk.tricks >= 1, JSON.stringify(pk));
+
+    step = 'v6 hardcore';
+    await openMode('hardcoreButton');
+    const hc = await world((w) => ({ maxHp: w.maxHp, mult: w.scoreMult }));
+    await forceDeath();
+    await sceneActive('GameOver');
+    const hcOver = await evaluate((h) => ({ cont: !!window[h].scene('GameOver').continueButton, records: Object.keys(JSON.parse(localStorage.getItem('neondash.save.v1')).modeBests ?? {}) }), H);
+    check('Hardcore: one heart, triple score, no second chance; v6 records saved', hc.maxHp === 1 && hc.mult === 3 && !hcOver.cont && hcOver.records.length === 4, JSON.stringify({ ...hc, ...hcOver }));
+
+    // v6 graphics: record gate, warp between zones, afterimages, sun rays, road mirror.
+    step = 'v6 graphics';
+    await tapButton('GameOver', 'menuButton');
+    await sceneActive('Menu');
+    await evaluate((h) => (window[h].services.save.data.bestDistance = Math.max(300, window[h].services.save.data.bestDistance)), H);
+    await tapButton('Menu', 'playButton');
+    await newRun();
+    const gate = await evaluate((h) => { const g = window[h].scene('Game'); return { distance: g.recordDistance, gate: !!g.view.recordGate }; }, H);
+    await world((w, d) => (w.distance = d - 2), gate.distance);
+    await waitFor((h) => window[h].scene('Game').recordPassed === true, H, 20000);
+    check('Record gate: shown at the distance record and celebrated when crossed', gate.gate && gate.distance >= 300, JSON.stringify(gate));
+    await world((w) => w._nextZone(2.5));
+    await waitFor((h) => window[h].scene('Game').view.warp.k > 0.3, H, 20000);
+    const warp = await evaluate((h) => ({ k: +window[h].scene('Game').view.warp.k.toFixed(2), fov: +window[h].services.stage.camera.fov.toFixed(1) }), H);
+    check('Zone change: warp tunnel with a wider field of view', warp.k > 0.3 && warp.fov > 64, JSON.stringify(warp));
+    await world((w) => {
+      w.player.od = 1;
+      w.activateOverdrive();
+    });
+    await waitFor((h) => window[h].scene('Game').view.afterimages?.copies?.[0]?.copy.visible === true, H, 20000);
+    check('Overdrive: glowing afterimages trail the runner', true);
+    const look = await evaluate(async (h) => {
+      const st = window[h].services.stage;
+      st.setQuality('high');
+      await new Promise((r) => setTimeout(r, 1500));
+      const out = { rays: +st.grade.uniforms.rays.value.toFixed(2), mirror: !!st.mirror && st.mirror.target.width > 1, quality: st.qualityName };
+      st.setQuality('medium');
+      return out;
+    }, H);
+    check('High quality: sun rays and the road mirror render', look.mirror && look.rays > 0, JSON.stringify(look));
+    await shot('17-v6-graphics');
   } catch (err) {
     check(`Unexpected failure during "${step}"`, false, err.message.split('\n')[0]);
     await shot('99-failure').catch(() => {});
