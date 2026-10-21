@@ -234,7 +234,7 @@ npm run cap:sync
 cd android && ./gradlew assembleDebug     # APK in android/app/build/outputs/apk/debug/
 ```
 
-`versionName` e `versionCode` vengono dal campo `version` di `package.json` (4.0.0 → versionCode 40000).
+`versionName` e `versionCode` vengono dal campo `version` di `package.json` (5.0.0 → versionCode 50000).
 
 Le build di debug sono firmate con `android/debug.keystore`, una chiave di debug inclusa nel repository (come quella che Android Studio crea in locale, non è un segreto). Così tutti gli APK prodotti dalla GitHub Action hanno la stessa firma: una nuova versione si installa sopra la precedente e **i salvataggi restano**. Le release usano invece la chiave privata di `keystore.properties`.
 

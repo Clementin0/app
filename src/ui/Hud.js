@@ -347,10 +347,13 @@ export class Hud {
     this.scene.tweens.add({ targets: [m, this.subMessage], alpha: 0, delay: duration, duration: 300 });
   }
 
+  /** Hides the message and the event/goal labels (under the perk and result panels); update() brings the labels back. */
   clearMessage() {
     this.scene.tweens.killTweensOf([this.message, this.subMessage]);
     this.message.setAlpha(0);
     this.subMessage.setAlpha(0);
+    this.eventLabel.setVisible(false);
+    this.goalLabel.setVisible(false);
   }
 
   /** Shows the gesture for a tutorial step ({ id, hint, gesture }), or hides it with null. */

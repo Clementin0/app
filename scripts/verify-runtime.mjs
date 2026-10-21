@@ -611,6 +611,7 @@ async function main() {
     await sceneActive('GameOver', 20000);
     const camp = await evaluate((h) => ({ result: window[h].scene('GameOver').result.campaign, saved: JSON.parse(localStorage.getItem('neondash.save.v1')).campaign?.[1] }), H);
     check('Campaign: level 1 cleared, stars saved, next level offered', camp.result?.won && camp.saved?.[0] === true && camp.result.hasNext, JSON.stringify(camp));
+    await waitFor((h) => window[h].scene('GameOver').panel.alpha === 1, H);
     await shot('13-level-cleared');
     await tapButton('GameOver', 'menuButton');
     await sceneActive('Campaign', 20000);
