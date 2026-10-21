@@ -270,3 +270,24 @@ describe('v6 fairness: the autopilot gets through every new mode', () => {
     expect(laneX(w.player.lane)).toBeCloseTo(w.player.x, 0);
   });
 });
+
+describe('v6 records', () => {
+  it('each new mode keeps its own record (assault by waves first), and bad saves are cleaned', async () => {
+    const { SaveData } = await import('../src/services/SaveData.js');
+    const { MemoryStorage } = await import('./helpers.js');
+    const storage = new MemoryStorage();
+    const save = new SaveData(storage);
+    expect(save.submitModeBest('assault', { score: 900, waves: 6 })).toBe(true);
+    expect(save.submitModeBest('assault', { score: 5000, waves: 5 })).toBe(false);
+    expect(save.submitModeBest('assault', { score: 950, waves: 6 })).toBe(true);
+    expect(save.submitModeBest('chaos', { score: 300 })).toBe(true);
+    expect(save.submitModeBest('chaos', { score: 200 })).toBe(false);
+    expect(save.submitModeBest('nope', { score: 1 })).toBe(false);
+    expect(new SaveData(storage).modeBest('assault')).toMatchObject({ waves: 6, score: 950 });
+    expect(save.highScore).toBe(0); // the classic high score is untouched
+    storage.setItem('neondash.save.v1', JSON.stringify({ modeBests: { parkour: { score: -4, meters: 'x' }, hacked: { score: 9 } } }));
+    const clean = new SaveData(storage);
+    expect(clean.modeBest('parkour')).toEqual({ score: 0, waves: 0, meters: 0 });
+    expect(clean.data.modeBests.hacked).toBeUndefined();
+  });
+});
