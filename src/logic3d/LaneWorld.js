@@ -137,6 +137,7 @@ export class LaneWorld {
     this.assault = this.mode === 'assault' ? { wave: 0, state: 'intro', timer: A.firstWave, groups: [], groupTimer: 0, spawned: [], total: 0 } : null;
     this.chaos = this.mode === 'chaos' ? { timer: this.cfg.CHAOS.first, mult: 1, done: 0, bag: [], last: null } : null;
     this.mutator = null; // chaos mutation in progress
+    this.hyperK = 0; // 0..1, the "hyper" speed eases in and out
     this.player = {
       lane: 1,
       x: laneX(1),
@@ -379,7 +380,7 @@ export class LaneWorld {
     const ramp = this.mode === 'timeAttack' ? this.cfg.TIME_ATTACK.rampTime : SPEED.rampTime;
     const base = top - (top - SPEED.start) * Math.exp(-time / ramp);
     const event = this.event ? (this.cfg.EVENTS[this.event.type]?.speed ?? 1) : 1;
-    const hyper = this.mutator?.id === 'hyper' ? this.cfg.CHAOS.hyper : 1;
+    const hyper = this.hyperK > 0 ? 1 + (this.cfg.CHAOS.hyper - 1) * this.hyperK : 1;
     return base * event * this.modifiers.speed * hyper;
   }
 
@@ -697,6 +698,8 @@ export class LaneWorld {
   _updateChaos(dt) {
     const ch = this.chaos;
     const m = this.mutator;
+    const goal = m?.id === 'hyper' ? 1 : 0;
+    this.hyperK += Math.max(-dt, Math.min(dt, goal - this.hyperK)); // about a second each way
     if (m) {
       m.t += dt;
       const over = m.event ? this.event?.type !== m.id : m.t >= m.duration;
@@ -2079,7 +2082,10 @@ export class LaneWorld {
     if (!this.canRevive) return false;
     const p = this.player;
     this.reviveUsed = true;
-    this.entities = this.entities.filter((e) => e.kind === 'pickup' || e.z > 45);
+    // Threats near the runner go away (marked dead: an assault wave or an
+    // ambush waiting for them must not wait forever).
+    for (const e of this.entities) if (e.kind !== 'pickup' && e.z <= 45) e.dead = true;
+    this.entities = this.entities.filter((e) => !e.dead);
     this.eshots = [];
     this.shots = [];
     this.waves = [];

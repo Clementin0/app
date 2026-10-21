@@ -73,6 +73,16 @@ describe('v6 assault: waves of enemies', () => {
     expect(w.stats.waves).toBeGreaterThanOrEqual(2);
   });
 
+  it('a revive in the middle of a wave does not leave it waiting forever', () => {
+    const w = world('assault', 4);
+    run(w, 6);
+    expect(w.assault.state).toBe('wave');
+    w._die('test');
+    expect(w.revive()).toBe(true);
+    run(w, 30, (world) => (world.player.invulnerable = 9));
+    expect(w.assault.wave).toBeGreaterThan(1);
+  });
+
   it('every fifth wave is a boss that does not flee; then a perk and a new zone', () => {
     const w = safe(world('assault'));
     w.assault.wave = ASSAULT.bossEvery - 1;
@@ -141,6 +151,8 @@ describe('v6 chaos: the rules keep changing', () => {
     w._endMutator();
     const v = w._speedAt(30);
     w._startMutator('hyper');
+    expect(w._speedAt(30)).toBeCloseTo(v); // it eases in...
+    run(w, 2);
     expect(w._speedAt(30)).toBeCloseTo(v * CHAOS.hyper);
   });
 

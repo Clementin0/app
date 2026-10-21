@@ -349,9 +349,14 @@ export class Afterimages {
       const material = new MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false });
       const copy = this.build();
       copy.traverse((o) => {
-        if (!o.isMesh) return;
-        o.material.dispose?.();
-        o.material = material;
+        if (o.isSprite) {
+          // Glows and flames stay off: the copy is one flat color.
+          o.material.dispose();
+          o.visible = false;
+        } else if (o.isMesh) {
+          o.material.dispose?.();
+          o.material = material;
+        }
       });
       for (const k of ['muzzle', 'jetpack']) if (copy.userData[k]) copy.userData[k].visible = false;
       copy.visible = false;
