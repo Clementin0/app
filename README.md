@@ -14,6 +14,14 @@ Modelli 3D, texture, effetti sonori e colonna sonora sono generati proceduralmen
 | ![Potenziamenti](docs/screenshots/perks.png) | ![Modalità](docs/screenshots/modes.png) | ![Negozio](docs/screenshots/shop.png) |
 | **Ricompensa giornaliera** | **Game Over** | **Impostazioni** |
 | ![Ricompensa giornaliera](docs/screenshots/daily.png) | ![Game over](docs/screenshots/game-over.png) | ![Impostazioni](docs/screenshots/settings.png) |
+| **Campagna: 24 livelli** | **Livello superato con 3 stelle** | **Contro il tempo** |
+| ![Campagna](docs/screenshots/campaign.jpg) | ![Livello superato](docs/screenshots/level-cleared.jpg) | ![Contro il tempo](docs/screenshots/time-attack.jpg) |
+| **Boss: onda sismica (salta)** | **Boss: laser (scivola)** | **Boss: plasma pesante (cambia corsia)** |
+| ![Onda sismica](docs/screenshots/boss-quake.jpg) | ![Laser](docs/screenshots/boss-laser.jpg) | ![Plasma pesante](docs/screenshots/boss-heavy.jpg) |
+| **Boss con lo scudo** | **Boss infuriato** | **Overdrive** |
+| ![Scudo del boss](docs/screenshots/boss-shield.jpg) | ![Boss infuriato](docs/screenshots/boss-enraged.jpg) | ![Overdrive](docs/screenshots/overdrive.jpg) |
+| **Recinzione laser, cecchino e guardia** | **Ora di punta** | **Blackout (Inferno)** |
+| ![Nuove minacce](docs/screenshots/threats.jpg) | ![Ora di punta](docs/screenshots/traffic.jpg) | ![Blackout](docs/screenshots/blackout.jpg) |
 
 ## Scelte di progetto
 
@@ -36,11 +44,21 @@ Modelli 3D, texture, effetti sonori e colonna sonora sono generati proceduralmen
   - Inferno: vulcani con crateri di lava e rocce incandescenti;
   - Abisso: alghe con anelli bioluminescenti e coralli;
   - Orbita: asteroidi che ruotano, piloni luminosi e un pianeta con gli anelli.
-- **Orizzonte synthwave**: montagne in wireframe, sole con alone, cielo stellato. Lungo la strada ci sono archi al neon e lampioni, che si scuriscono vicino alla camera per non abbagliare. La strada è bagnata, con riflessi e linee luminose.
+- **Cielo animato** (shader): sfumatura con una fascia calda sull'orizzonte, stelle che brillano, stelle cadenti, nebulose che si muovono lentamente e, su Ghiaccio e Abisso, un'aurora. Ogni zona ha il suo cielo.
+- **Orizzonte synthwave**: montagne in wireframe e sole con alone. Lungo la strada ci sono archi al neon e lampioni, che si scuriscono vicino alla camera per non abbagliare.
+- **Luce al neon sui contorni**: personaggio, nemici, ostacoli e boss hanno un bordo luminoso nel colore della zona, che li stacca dallo sfondo anche ad alta velocità.
+- **Strada bagnata**: il sole si riflette al centro della carreggiata, con un riflesso che ondeggia, oltre alle linee luminose.
+- **Ombre morbide** sotto il personaggio, i nemici, gli ostacoli e i pickup; si rimpiccioliscono quando salti o voli.
+- **Scia di luce** che il personaggio lascia sulla strada, come nelle moto di luce.
+- **Blackout**: le luci della città si spengono e resta solo il faro del personaggio, che illumina la strada davanti a te.
 - **Meteo per zona**: pioggia, sabbia, neve, braci, bolle, polvere di stelle.
 - **Camera viva**: il campo visivo si allarga con la velocità (molto col turbo), la camera si inclina leggermente nei cambi di corsia, e ad alta velocità compaiono le linee di velocità.
 - **Effetti**:
-  - onde d'urto sulle esplosioni;
+  - esplosioni con lampo, onda d'urto e frammenti luminosi che rimbalzano sulla strada;
+  - bolla dello scudo del boss, aura rossa quando è infuriato e scintille quando è danneggiato;
+  - mirino rosso del cecchino sulla corsia e raggio quando spara;
+  - onde sismiche e raggi laser del boss che corrono verso di te;
+  - **overdrive**: colori più saturi, alone magenta e campo visivo più largo;
   - scia di fumo dei razzi;
   - scia del turbo;
   - lampi durante la tempesta.
@@ -57,8 +75,9 @@ Modelli 3D, texture, effetti sonori e colonna sonora sono generati proceduralmen
 | Swipe ↓ | scivola sotto le travi (in aria: picchiata) |
 | Tocco | spara un colpo |
 | Tieni premuto | fuoco automatico (puoi cambiare corsia mentre spari) |
+| Pulsante ⚡ (in basso a destra) | attiva l'**overdrive** quando l'anello è pieno |
 
-Un solo dito può concatenare direzioni diverse (es. sinistra e poi su), ma uno swipe lungo nella stessa direzione conta una volta sola. Anche gli swipe molto veloci vengono riconosciuti. Nel browser: frecce o WASD, SPAZIO per sparare, P o ESC per la pausa.
+Un solo dito può concatenare direzioni diverse (es. sinistra e poi su), ma uno swipe lungo nella stessa direzione conta una volta sola. Anche gli swipe molto veloci vengono riconosciuti. Nel browser: frecce o WASD, SPAZIO per sparare, E o SHIFT per l'overdrive, P o ESC per la pausa.
 
 **Tutorial interattivo**: alla prima partita arrivano, uno alla volta, un muro, delle barriere, delle travi laser e un robot. Quando l'ostacolo si avvicina il tempo rallenta fino a fermarsi e compare il gesto da fare (con una freccia animata); la mossa giusta fa ripartire il gioco. Durante il tutorial non si può perdere, e c'è un pulsante per saltarlo. Chi aveva già giocato con una versione precedente non lo rivede.
 
@@ -68,27 +87,40 @@ Un solo dito può concatenare direzioni diverse (es. sinistra e poi su), ma uno 
 - **Arieti**: si fermano davanti a te, lampeggiano e poi caricano lungo la loro corsia. Abbattili prima o spostati.
 - **Torrette** piazzate sulla strada, che sparano plasma lungo la loro corsia.
 - **Bombardieri**: volano davanti a te, cambiano corsia e sganciano mine.
-- Ostacoli: barriere da saltare, travi laser da passare scivolando, muri che bloccano la corsia, piattaforme su cui correre, **barriere mobili** che scorrono da un lato all'altro della strada e **voragini** da saltare (cadere è fatale).
+- **Cecchini**: restano sospesi lontano, puntano la tua corsia con un mirino rosso e dopo un attimo sparano un raggio lungo tutta la corsia. Cambia corsia appena vedi il mirino, o abbattili prima.
+- **Guardie con lo scudo**: avanzano a piedi dietro uno scudo che assorbe i colpi frontali. Bisogna romperlo prima di colpirle (i razzi lo scavalcano), oppure evitarle.
+- Ostacoli: barriere da saltare, travi laser da passare scivolando, muri che bloccano la corsia, piattaforme su cui correre, **barriere mobili** che scorrono da un lato all'altro della strada, **voragini** da saltare (cadere è fatale) e **recinzioni laser** che si accendono e si spengono a ritmo: passa quando sono spente (se sono accese costano un cuore).
 - **Pedane turbo**: passaci sopra e per 2,6 secondi corri al 165% della velocità e sei invincibile. Sfondi muri, casse e nemici (+20 punti per ostacolo) e voli sopra le voragini. Dopo la pedana la corsia è piena di cose da sfondare: senza turbo conviene cambiare corsia.
 - **Rampe**: ti lanciano a più di 4 m d'altezza sopra un muro, attraverso una scia di monete nel cielo. Le altre corsie restano percorribili.
 - Ogni nemico abbattuto dà punti (che compaiono sopra di lui) e lascia cadere monete. Le uccisioni ravvicinate creano una **combo** (fino a ×8).
+- **Schivate al pelo**: se un ostacolo o un nemico passa nella corsia che hai appena lasciato, prendi +25 punti e carichi l'overdrive.
+- **Overdrive**: l'anello attorno al pulsante ⚡ si riempie con monete, uccisioni, schivate al pelo, ostacoli sfondati e boss. Quando è pieno lo attivi: per 6 secondi il mondo rallenta (bullet time), fai il 60% di danni in più, spari molto più in fretta e i punti valgono doppio. Va usato al momento giusto, ad esempio contro un boss o in mezzo a un'ondata di nemici.
 - **Eventi** durante la corsa: due per zona, a 280 m e a 600 m, mai lo stesso due volte di fila.
   - **Corsa all'oro**: monete su tutte le corsie e strada più veloce.
   - **Imboscata**: la strada rallenta e arrivano tre ondate di nemici; se li abbatti tutti, +30 monete.
   - **Pioggia di meteoriti** (dalla zona 2): un cerchio rosso segna dove cadrà ogni meteorite; esci dalla corsia prima dell'impatto.
   - **Tempesta** (Deserto, Ghiaccio e Città dal secondo giro): sabbia, neve o pioggia fitta, nebbia vicina e lampi. I punti valgono doppio e gli ostacoli arrivano un po' più distanziati.
   - **Gravità ridotta** (Abisso e Orbita): salti altissimi e lunghissimi e monete sospese in aria. Un salto iniziato in bassa gravità resta lento fino all'atterraggio.
+  - **Ora di punta** (Città, Deserto, Ghiaccio e Orbita, dalla zona 2): auto lanciate contro di te, su una o due corsie (mai tutte e tre). Un clacson le annuncia; le altre righe di ostacoli si fermano.
+  - **Blackout** (Città, Inferno e Abisso, dalla zona 2): le luci si spengono e vedi solo quello che illumina il tuo faro. I punti valgono ×1,5 e gli ostacoli arrivano un po' più distanziati.
 - **Jetpack** (power-up raro): voli sopra tutto per 7 secondi raccogliendo monete in cielo, e i colpi scendono a colpire i nemici a terra.
 - **Boss**: dopo 900 m di ogni zona arriva un boss con nome e barra della vita colorata. Ogni zona ha il suo, con aspetto e attacchi propri:
 
   | Zona | Boss | Attacchi |
   | --- | --- | --- |
-  | 1 | Nave madre | raffiche su due corsie (una resta libera), colpi mirati |
-  | 2 | Scorpione delle dune | sgancia **mine** su una o due corsie (da abbattere o saltare), raffiche |
-  | 3 | Portaerei glaciale | lancia **droni**, spazzate di colpi corsia dopo corsia |
-  | 4 | Signore infernale | spazzate, mine, droni, raffiche |
-  | 5 | Kraken meccanico | spazzate doppie, mine, raffiche (tentacoli animati) |
-  | 6 | Nucleo IA | **meteoriti**, droni, spazzate, mine: il più completo |
+  | 1 | Nave madre | raffiche su due corsie (una resta libera), colpi mirati, **plasma pesante** |
+  | 2 | Scorpione delle dune | sgancia **mine** su una o due corsie (da abbattere o saltare), **onde sismiche**, raffiche |
+  | 3 | Portaerei glaciale | lancia **droni**, spazzate di colpi corsia dopo corsia, **laser** |
+  | 4 | Signore infernale | spazzate, onde sismiche, mine, plasma pesante, droni, laser |
+  | 5 | Kraken meccanico | spazzate, laser, mine, plasma pesante, onde sismiche (tentacoli animati) |
+  | 6 | Nucleo IA | **meteoriti**, laser, droni, onde sismiche, spazzate, plasma pesante, mine: il più completo |
+
+  Gli attacchi che non si possono fermare sparando vanno schivati:
+  - **plasma pesante**: grosse sfere su due corsie che assorbono i colpi; spostati in quella libera;
+  - **onda sismica**: un'onda che corre sulla strada; saltala;
+  - **laser**: un raggio all'altezza del petto che si carica e poi parte; passaci sotto scivolando.
+
+  A metà vita il boss alza uno **scudo** per 4,5 secondi: i colpi rimbalzano e lancia una raffica di attacchi da schivare. Dalla zona 4 lo scudo si alza due volte (a 2/3 e a 1/3) e gli attacchi arrivano a coppie, sempre con una via d'uscita. La prima volta che compare un attacco, un breve suggerimento dice come evitarlo.
 
   Se lo abbatti (con un attimo di rallentatore) prendi +40 monete, +3 gemme e un grosso bonus. Se resisti 45 secondi se ne va. Dopo la sesta zona il ciclo ricomincia, più difficile.
 - **Potenziamenti a scelta**: dopo ogni boss il gioco si ferma e propone **3 carte a caso** tra 13: cuore extra, calibro (+danno), raffica, colpi perforanti, tripla canna, calamita, scudo rigenerante, fortuna, esplosivi, combo infinita, tempo dilatato, vampiro, portafortuna. Valgono fino alla fine della corsa e alcuni si sommano (ad esempio calibro fino a 4 livelli), quindi ogni partita prende una strada diversa. Quelli attivi compaiono in basso a sinistra.
@@ -100,7 +132,20 @@ Un solo dito può concatenare direzioni diverse (es. sinistra e poi su), ma uno 
 
 - **Infinita**: la corsa classica (pulsante GIOCA).
 - **Sfida giornaliera**: stesso percorso per tutti per tutto il giorno, con una regola diversa ogni giorno tra sette: turbo (+20% velocità, punti ×1,5), cristallo (un solo cuore, punti ×2), solo laser, tempesta di meteoriti, febbre dell'oro, caccia ai boss (arrivano prima), agguati. Sconfiggere il primo boss vale **+150 monete e +5 gemme**, una volta al giorno; resta il record del giorno.
-- **Boss Rush**: solo boss, uno dopo l'altro e sempre più forti, con un potenziamento dopo ognuno. Si conserva il record di boss sconfitti.
+- **Campagna**: 24 livelli, 4 per ognuna delle 6 zone, su una mappa. Ogni livello ha un obiettivo (percorrere una distanza, raccogliere monete, eliminare nemici, sconfiggere il boss, superare un evento, fare schivate al pelo, sfondare ostacoli col turbo, volare dalle rampe). Molti hanno anche una regola speciale: senza sparare, un cuore solo, velocità +20%, solo ventaglio, ora di punta, blackout, gravità ridotta... Ogni livello dà **3 stelle**:
+  1. completare l'obiettivo;
+  2. raccogliere abbastanza monete (nei livelli di monete: finire entro un tempo limite);
+  3. finire senza perdere cuori.
+
+  Il primo completamento sblocca il livello successivo e vale monete (da 75 a 420), ogni stella nuova vale una gemma, e le stelle guadagnate non si perdono. Alla fine si può rigiocare il livello, tornare alla mappa o passare al successivo. I boss della campagna non scappano: dopo 45 secondi si infuriano.
+- **Boss Rush**: solo boss, uno dopo l'altro e sempre più forti, con un potenziamento dopo ognuno. Non basta tenere premuto il fuoco:
+  - la vita dei boss cresce a ogni boss e in proporzione alla potenza di fuoco ottenuta con i potenziamenti;
+  - ogni boss alza lo scudo due volte e, dal terzo, attacca a coppie;
+  - gli attacchi accelerano a ogni boss e, dopo 35 secondi, il boss si **infuria** (attacchi molto più rapidi) invece di andarsene;
+  - niente potenziamenti che curano o fanno solo monete (vampiro, portafortuna, fortuna, calamita).
+
+  Si conserva il record di boss sconfitti.
+- **Contro il tempo**: si parte con 60 secondi e la strada accelera più in fretta. Gli **orologi** sulla strada danno +4 secondi, ogni uccisione e schivata al pelo +0,5, ogni boss +10. La corsa finisce quando il tempo scade; si conserva il record.
 
 **Personalizzazione e progressione**
 
@@ -122,7 +167,7 @@ Un solo dito può concatenare direzioni diverse (es. sinistra e poi su), ma uno 
   - **Menu**, con una corsa demo 3D giocata dall'IA e il pannello delle missioni;
   - **Gioco**, con HUD per punti, cuori, monete, avanzamento della zona (o tempo dell'evento), power-up, potenziamenti attivi, combo, barra del boss e pausa;
   - **Pausa**: riprendi con conto alla rovescia, ricomincia, menu, impostazioni;
-  - **Game Over**: riepilogo con uccisioni, zona raggiunta (o boss sconfitti), esperienza guadagnata e barra del livello, avvisi per livelli, missioni e sfide completate, **Continua**, **Rigioca** (nella stessa modalità), **Menu**.
+  - **Game Over**: riepilogo con uccisioni, zona raggiunta (o boss sconfitti), esperienza guadagnata e barra del livello, avvisi per livelli, missioni e sfide completate, **Continua**, **Rigioca** (nella stessa modalità), **Menu**. Nella campagna mostra le stelle (o quanto mancava all'obiettivo) e i pulsanti **Mappa** e **Avanti**.
 - **Impostazioni**: musica, effetti sonori, vibrazione, lingua, consenso privacy (se richiesto dal GDPR) e **qualità grafica**:
   - bassa: niente post-processing;
   - media: bloom e grading;
@@ -162,6 +207,7 @@ src/
                             turbo, rampe, razzi, punteggi
   config/zones.js           temi delle 6 zone (colori, scenario, meteo, musica)
   config/perks.js           i 13 potenziamenti a scelta dopo i boss
+  config/campaign.js        i 24 livelli della campagna: obiettivi, regole, stelle, premi
   config/cosmetics.js       catalogo del negozio: skin, cappelli, armi, scie
   config/upgrades.js        potenziamenti e loadout della partita
   i18n.js                   testi in italiano e inglese
@@ -175,14 +221,17 @@ src/
   logic/ScoreManager.js     punteggio della partita
   logic/Progression.js      esperienza e livelli del giocatore
   three/                    rendering 3D: Stage (renderer, post-processing e qualità), GradeShader,
-                            Environment (strada, cielo, montagne, archi, nebbia, lampi),
+                            Environment (strada, luci, montagne, archi, nebbia, lampi, faro),
+                            Sky (cielo in shader), shading (luce sui contorni, strada bagnata),
+                            Effects (ombre, scia di luce, frammenti, lampi delle esplosioni),
                             Scenery (scenari instanziati delle zone), Weather (meteo, linee di velocità),
                             models (ostacoli, nemici, boss, pickup, pedane, rampe, razzi), Character,
                             Particles, GameView (partita e demo), PreviewView (anteprima del negozio)
   services/                 AdService, MockAdMob, SaveData (LocalStorage), Sfx e Music (Web Audio),
                             Haptics, Platform (tasto indietro, background), DailyReward,
                             AutoQuality (qualità grafica adattiva), DailyChallenge (sfida del giorno)
-  scenes/                   Boot, Menu, Daily, Modes, Shop, Game, Perk, Pause, GameOver, Settings (interfaccia Phaser)
+  scenes/                   Boot, Menu, Daily, Modes, Campaign, Shop, Game, Perk, Pause, GameOver, Settings
+                            (interfaccia Phaser)
   ui/                       texture procedurali dell'interfaccia, bottoni, interruttori, HUD
 tests/                      test unitari Vitest
 scripts/
@@ -199,7 +248,7 @@ store/                      icona 512×512 e feature graphic 1024×500 per il Pl
 ```bash
 npm install            # dipendenze
 npm run dev            # gioco nel browser con hot reload (annunci simulati)
-npm test               # 153 test unitari (mondo 3D, armi, nemici, ostacoli, eventi, jetpack, turbo, rampe, razzi, tempesta, gravità ridotta, 6 boss, potenziamenti, modalità, livelli, tutorial, missioni, ricompensa giornaliera, grafica adattiva, salvataggi, negozio, lingue, annunci)
+npm test               # 188 test unitari (mondo 3D, armi, nemici, ostacoli, eventi, jetpack, turbo, rampe, razzi, tempesta, gravità ridotta, 6 boss con scudi e attacchi da schivare, difficoltà del Boss Rush, overdrive, schivate al pelo, cecchini, guardie, recinzioni, traffico, blackout, campagna, contro il tempo, potenziamenti, modalità, livelli, tutorial, missioni, ricompensa giornaliera, grafica adattiva, salvataggi, negozio, lingue, annunci)
 npm run build          # bundle web di produzione in dist/
 npm run verify         # gioca la build in Chromium headless e verifica tutto il flusso
 npm run cap:sync       # build + npx cap sync android + configurazione Android
@@ -207,7 +256,7 @@ npm run cap:open       # apre il progetto in Android Studio
 npm run release:check  # controlla che la release non usi gli ID AdMob di test
 ```
 
-`npm run verify` emula un telefono in landscape con touch e gioca davvero, con swipe e tocchi. Controlla 56 punti, tra cui:
+`npm run verify` emula un telefono in landscape con touch e gioca davvero, con swipe e tocchi. Controlla 61 punti, tra cui:
 - avvio dei due renderer (Three.js e Phaser) e demo 3D nel menu;
 - ricompensa giornaliera riscossa una volta sola;
 - banner nel menu, nascosto in gioco;
@@ -221,6 +270,7 @@ npm run release:check  # controlla che la release non usi gli ID AdMob di test
 - impostazioni: vibrazione, qualità grafica, lingua;
 - negozio: anteprima 3D, acquisto di skin e potenziamento, +50 monete con video, skin e danno applicati in partita;
 - novità della 4.0: pedana turbo (velocità, muro sfondato, campo visivo più largo), lancio dalla rampa, razzi a ricerca che colpiscono un nemico in un'altra corsia, tempesta (nebbia, meteo più fitto, punti doppi) e salto in gravità ridotta;
+- novità della 5.0: overdrive attivato dal pulsante dell'HUD, onda sismica e plasma pesante del boss disegnati, quattro modalità, livello 1 della campagna completato con le stelle salvate e il pulsante per il successivo, timer di "Contro il tempo" che scorre;
 - musica attiva e assenza di errori in console.
 
 Gli screenshot finiscono in `verify-output/`.
@@ -257,7 +307,7 @@ La GitHub Action [`.github/workflows/android.yml`](.github/workflows/android.yml
 ## Note tecniche
 
 - Due canvas sovrapposti: sotto il `WebGLRenderer` di Three.js (`#stage`), sopra il canvas trasparente di Phaser (`#game`) con interfaccia e input. Il rendering 3D avviene a ogni passo del gameloop di Phaser, così i due livelli restano sincronizzati.
-- La logica di gioco (`src/logic3d`) non dipende né da Phaser né da Three.js: le viste ne leggono lo stato e reagiscono a una coda di eventi (colpi, uccisioni, boss...). Per questo fisica, collisioni, armi, nemici, eventi, boss, potenziamenti, modalità, tutorial, missioni e revive sono coperti da test deterministici in Node. Un'IA gioca 3 minuti di partita su 12 seed diversi attraversando zone, affronta ognuno dei 6 boss su più seed e gioca Boss Rush e sfide giornaliere, per verificare che pattern, eventi e attacchi siano sempre superabili.
+- La logica di gioco (`src/logic3d`) non dipende né da Phaser né da Three.js: le viste ne leggono lo stato e reagiscono a una coda di eventi (colpi, uccisioni, boss...). Per questo fisica, collisioni, armi, nemici, eventi, boss, potenziamenti, modalità, tutorial, missioni e revive sono coperti da test deterministici in Node. Un'IA gioca 3 minuti di partita su 12 seed diversi attraversando zone, affronta ognuno dei 6 boss su più seed e gioca Boss Rush, sfide giornaliere e livelli della campagna, per verificare che pattern, eventi e attacchi siano sempre superabili. Un test controlla anche il contrario: tenendo premuto il fuoco senza muoversi, il Boss Rush finisce al primo boss.
 - Nella sfida giornaliera il percorso (righe di ostacoli, power-up, eventi) ha un seme separato dal resto, quindi è lo stesso per tutti qualunque cosa si colpisca.
 - Prestazioni su mobile:
   - materiali e geometrie condivisi, mesh riutilizzate in pool, edifici in `InstancedMesh`;

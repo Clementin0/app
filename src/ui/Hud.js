@@ -1,4 +1,4 @@
-import { BOSS_KINDS } from '../config/game3d.config.js';
+import { BOSS_KINDS, OVERDRIVE } from '../config/game3d.config.js';
 import { PERKS } from '../config/perks.js';
 import { zoneTheme } from '../config/zones.js';
 import { fmt, t } from '../i18n.js';
@@ -305,7 +305,7 @@ export class Hud {
     const { x, y } = this.odPos ?? { x: 0, y: 0 };
     const full = state.od >= 1;
     const active = state.overdrive > 0;
-    const k = active ? state.overdrive / 6 : state.od;
+    const k = active ? state.overdrive / OVERDRIVE.duration : state.od;
     const g = this.odRing;
     g.clear();
     g.lineStyle(9, COLORS.ink, 0.7).strokeCircle(x, y, 56);
